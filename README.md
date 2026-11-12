@@ -5,7 +5,7 @@ solutions of the stationary Navier–Stokes equations in R³ \ {axis}. It follow
 monograph *Axisymmetric (−1)-homogeneous solutions of the stationary Navier–Stokes
 equations with swirl*, which is in `docs/`.
 
-**Status:** milestones 1 to 4 are done.
+**Status:** milestones 1 to 5 are done.
 
 - Milestone 1: core solver, pole diagnostics, regression tests.
 - Milestone 2: the Qt shell, with the parameter panel, the live status and stacked
@@ -24,11 +24,23 @@ equations with swirl*, which is in `docs/`.
 - Milestone 4: a slice plane next to the 3D view. It shows:
   - colour by u·n or ρ·u·n, on a linear or signed-log scale, shared with the 3D view;
   - projected streamlines and an optional LIC texture;
-  - the axis and the cut-out around the origin, with a small orientation sketch;
-  - presets, azimuth/elevation/offset sliders, a draggable plane in 3D, and
-    "point the 3D camera along n".
+  - the axis and the cut-out around the origin;
+  - presets, azimuth/elevation/offset sliders and typed values, a draggable plane in 3D,
+    and "point the 3D camera along n". The 2D slice is hidden until "Show 2D slice".
 
-The Σ-map comes next.
+- Milestone 5: the Σ-map tab. Pick two of the six data; the other four stay at the
+  current solution's values. The grid is shot to both poles in the background on all
+  cores (about 7 s for 101 × 101), with progress and cancel. Views:
+  - global / not global (blow-up before a pole, or a pole failing the terminal test);
+  - the pole type G/R/L1/L2 at each pole;
+  - the pole exponents μ₊, μ₋ with contours at ½, ⅔, 1 and the velocity classes they separate.
+
+  Hover for a readout, click to jump there, drag to move (the "lock to global
+  solutions" box applies). "Book's lens" reproduces Figure 1.3 with the book's apex
+  κ_max = 4.1608 and Landau window ±2 marked; a test checks the map against the
+  edges γ₋(κ), γ₊(κ) from bisection.
+
+Paths and movies come next.
 
 Start the app with:
 

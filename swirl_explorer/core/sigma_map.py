@@ -113,7 +113,10 @@ def _row(args) -> tuple[int, list]:
 def compute_sigma_map(spec: SigmaMapSpec,
                       progress: Optional[Callable[[float], None]] = None,
                       cancelled: Optional[Callable[[], bool]] = None,
-                      workers: int = 1) -> SigmaMapResult:
+                      workers: int = 1,
+                      on_start: Optional[Callable[["SigmaMapResult"], None]] = None) -> SigmaMapResult:
+    """``on_start(res)`` receives the result object before any row is computed; it is filled
+    in place row by row (``res.done``), so a GUI can draw partial maps while it grows."""
     if spec.x_name not in PARAM_NAMES or spec.y_name not in PARAM_NAMES:
         raise ValueError("unknown parameter name")
     shape = (spec.ny, spec.nx)
@@ -130,7 +133,11 @@ def compute_sigma_map(spec: SigmaMapSpec,
             res.blow_x[j, i] = bn if math.isfinite(bn) else bs
             res.done[j, i] = True
 
-    jobs = [(spec, j) for j in range(spec.ny)]
+    if on_start:
+        on_start(res)
+    # centre rows first: the interesting part of a map is usually in the middle
+    order = sorted(range(spec.ny), key=lambda j: abs(j - (spec.ny - 1) / 2))
+    jobs = [(spec, j) for j in order]
     if workers <= 1:
         for k, job in enumerate(jobs):
             if cancelled and cancelled():
@@ -140,8 +147,9 @@ def compute_sigma_map(spec: SigmaMapSpec,
                 progress((k + 1) / spec.ny)
     else:
         with ProcessPoolExecutor(max_workers=workers) as ex:
+            from concurrent.futures import as_completed
             futs = [ex.submit(_row, job) for job in jobs]
-            for k, fu in enumerate(futs):
+            for k, fu in enumerate(as_completed(futs)):
                 if cancelled and cancelled():
                     for f2 in futs:
                         f2.cancel()

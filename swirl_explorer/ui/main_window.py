@@ -52,8 +52,9 @@ class MainWindow(QMainWindow):
         self.split.setStretchFactor(1, 1)
         self.split.setChildrenCollapsible(False)
         self.tabs.addTab(self.split, "3D + slice")
-        self.tabs.addTab(_placeholder("Σ-map", "Globality and pole strata on 2D slices of R⁶ (milestone 5)."),
-                         "Σ-map")
+        from .panels.sigma_panel import SigmaMapPanel
+        self.sigma = SigmaMapPanel()
+        self.tabs.addTab(self.sigma, "Σ-map")
         # left: parameters + status
         left = QWidget()
         lv = QVBoxLayout(left)
@@ -84,15 +85,23 @@ class MainWindow(QMainWindow):
         self.dock_slice = QDockWidget("Slice controls")
         self.dock_slice.setObjectName("dock_slice")
         self.dock_slice.setWidget(self.slice.controls)
-        for d in (self.dock3d, self.dock_slice):
+        self.dock_sigma = QDockWidget("Σ-map controls")
+        self.dock_sigma.setObjectName("dock_sigma")
+        self.dock_sigma.setWidget(self.sigma.controls)
+        for d in (self.dock3d, self.dock_slice, self.dock_sigma):
             d.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable
                           | QDockWidget.DockWidgetClosable)
             self.addDockWidget(Qt.RightDockWidgetArea, d)
         self.tabifyDockWidget(dr, self.dock3d)
         self.tabifyDockWidget(self.dock3d, self.dock_slice)
+        self.tabifyDockWidget(self.dock_slice, self.dock_sigma)
         self.dock3d.raise_()
         self.setCentralWidget(self.tabs)
-        self._docks = (dl, dr, self.dock3d, self.dock_slice)
+        self._docks = (dl, dr, self.dock3d, self.dock_slice, self.dock_sigma)
+        # Σ-map: click/drag jumps the parameters; the global lock applies to it too
+        self.sigma.jumpRequested.connect(lambda q: self.params.set_params(q))
+        self.sigma.lock_check = self._lock_allows
+        self.tabs.currentChanged.connect(self._tab_changed)
         self._docks_sized = False
 
         m = self.menuBar().addMenu("&File")
@@ -144,6 +153,7 @@ class MainWindow(QMainWindow):
         self.plots.set_current(sol, sm)
         self.view3d.set_solution(sol, sm)
         self.slice.set_solution(sol, sm)
+        self.sigma.set_current(p)
         self.statusBar().showMessage(
             f"(c₁, c₂, c₃, γ, A, κ) = ({', '.join(f'{v:.7g}' for v in p.as_tuple())}) at x₀ = {p.xb:g}"
             f"   ·   solve {ms:.0f} ms")
@@ -159,9 +169,26 @@ class MainWindow(QMainWindow):
         self.plots.refresh_style()
         self.view3d.refresh_style()
         self.slice.refresh_style()
+        self.sigma.refresh_style()
         if self.last is not None:
             p, sol, sm = self.last
             self.status.show_summary(sm, 0.0)
+
+    def _lock_allows(self, q: Params) -> bool:
+        if not self.params.lock.isChecked():
+            return True
+        from ..core.solver import is_global_fast
+        return is_global_fast(q)
+
+    def _tab_changed(self, i: int) -> None:
+        sigma = self.tabs.widget(i) is self.sigma
+        self.slice_btn.setVisible(not sigma)          # the slice button belongs to the 3D tab
+        if sigma:
+            self.dock_sigma.show()
+            self.dock_sigma.raise_()
+            self.sigma.ensure_computed()              # the first visit computes a map right away
+        else:
+            self.dock3d.raise_()
 
     def _show_slice(self, on: bool) -> None:
         self.slice.setVisible(on)
@@ -206,4 +233,5 @@ class MainWindow(QMainWindow):
         self.solver.stop()
         self.view3d.shutdown()
         self.slice.shutdown()
+        self.sigma.shutdown()
         super().closeEvent(ev)
