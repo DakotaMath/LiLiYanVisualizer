@@ -16,6 +16,7 @@ sys.excepthook = lambda t, v, tb: (ERRORS.append(v), _hook(t, v, tb))
 app = QApplication(sys.argv)
 apply_theme(app)
 w = MainWindow()
+w.act_slice.setChecked(True)          # the 2D slice is hidden by default
 w.resize(1680, 980)
 w.move(20, 20)
 w.show()

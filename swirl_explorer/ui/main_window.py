@@ -106,10 +106,18 @@ class MainWindow(QMainWindow):
         q.triggered.connect(self.close)
         m.addAction(q)
         vm = self.menuBar().addMenu("&View")
-        self.act_slice = QAction("Slice plane beside the 3D view", self, checkable=True, checked=True)
-        self.act_slice.toggled.connect(self.slice.setVisible)
-        self.act_slice.toggled.connect(self.dock_slice.setVisible)
+        # the 2D slice pane is hidden until the user asks for it (button at the top right of the view tabs)
+        self.act_slice = QAction("Show 2D slice", self, checkable=True, checked=False)
+        self.act_slice.setToolTip("show the 2D slice plane beside the 3D view, with its controls")
+        self.act_slice.toggled.connect(self._show_slice)
         vm.addAction(self.act_slice)
+        from PySide6.QtWidgets import QToolButton
+        self.slice_btn = QToolButton()
+        self.slice_btn.setDefaultAction(self.act_slice)
+        self.slice_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.slice_btn.setStyleSheet("QToolButton{padding:3px 10px;}")
+        self.tabs.setCornerWidget(self.slice_btn, Qt.TopRightCorner)
+        self._show_slice(False)
         for d in self._docks:
             vm.addAction(d.toggleViewAction())
         vm.addSeparator()
@@ -155,6 +163,14 @@ class MainWindow(QMainWindow):
             p, sol, sm = self.last
             self.status.show_summary(sm, 0.0)
 
+    def _show_slice(self, on: bool) -> None:
+        self.slice.setVisible(on)
+        self.dock_slice.setVisible(on)
+        self.act_slice.setText("Hide 2D slice" if on else "Show 2D slice")
+        if on:
+            self.split.setSizes([10000, 10000])         # 3D and slice equally wide
+            self.dock_slice.raise_()
+
     def _about(self):
         QMessageBox.information(
             self, "Conventions",
@@ -170,7 +186,7 @@ class MainWindow(QMainWindow):
             from PySide6.QtCore import QTimer
             QTimer.singleShot(0, lambda: self.resizeDocks([self._docks[0], self._docks[1]], [330, 360],
                                                           Qt.Horizontal))
-            QTimer.singleShot(50, lambda: self.split.setSizes([10000, 10000]))   # 3D and slice equally wide
+            QTimer.singleShot(50, lambda: self._show_slice(self.act_slice.isChecked()))
             self._docks_sized = True
 
     def closeEvent(self, ev):

@@ -65,6 +65,13 @@ def test_main_window_solves_and_updates(app, tmp_path):
     w.show()
     assert _wait(app, lambda: w.last is not None)
     assert "GLOBAL" in w.status.head.text() and "type" in w.status.north.text()
+    # the 2D slice is hidden until the button is pressed
+    app.processEvents()
+    assert not w.slice.isVisible() and not w.dock_slice.isVisible()
+    w.slice_btn.click()
+    assert w.slice.isVisible() and w.dock_slice.isVisible() and w.act_slice.text() == "Hide 2D slice"
+    w.slice_btn.click()
+    assert not w.slice.isVisible()
     # a non-global choice updates the status with the blow-up point
     w.params.set_params(Params(gamma=5.0))
     assert _wait(app, lambda: w.last is not None and w.last[0].gamma == 5.0)

@@ -14,6 +14,7 @@ from swirl_explorer.ui.main_window import MainWindow
 from swirl_explorer.ui.theme import apply_theme
 app = QApplication(sys.argv); apply_theme(app)
 w = MainWindow(); w.resize(1500, 900); w.show(); v = w.view3d
+w.act_slice.setChecked(False); w.act_slice.setChecked(True)   # toggle the hidden-by-default 2D slice
 def settle(t=0.6):
     e = time.time()
     while time.time() - e < t:
