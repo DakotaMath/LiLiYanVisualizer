@@ -42,7 +42,8 @@ def MU_NORM():
     return mc.FuncNorm((f, g), vmin=0.0, vmax=1.5)   # ½ white, ⅔ sky blue, 1 amber         # ½ dotted, ⅔ dashed, 1 dash-dot (the edge of Σ is solid)
 MARK = "#ff4fd8"
 _CLICK = ("<br><br>Hover to read a point (crosshair); <b>click</b> to jump there, <b>drag</b> to move. "
-          "With 'lock to global solutions' on, non-global points are refused.")
+          "With 'lock to global solutions' on, non-global points are refused. "
+          "<b>Shift-click</b> adds a keyframe to the path (Path dock).")
 EXPLAIN = {
     "global": "<b>Green</b>: global, i.e. the solution exists on the whole sphere and both poles pass the "
               "book's terminal test.<br><b>Olive</b>: not global, the solution blows up at some x before "
@@ -57,6 +58,28 @@ EXPLAIN = {
           "μ &gt; 1 u<sub>r</sub> bounded. Contours: ½ white dotted, ⅔ blue dashed, 1 amber dash-dot. "
           "Cross-hatched: not global (switch to the global view to see why).",
 }                     # current point (magenta, as the predictions in the profile plots)
+
+
+PATH_FAIL = {"blowup": "#c9ad72", "unsafe": "#d9dde3"}   # the path where it is not global (timeline colours)
+
+
+class _Labelled:
+    """A legend handle made of overlaid lines, with a label (matplotlib draws tuples with HandlerTuple)."""
+
+    def __init__(self, parts, label):
+        self.parts, self._label = parts, label
+
+    def get_label(self):
+        return self._label
+
+
+def _legend_map():
+    from matplotlib.legend_handler import HandlerTuple, HandlerBase
+
+    class _H(HandlerBase):
+        def create_artists(self, legend, orig, xd, yd, w, h, fs, trans):
+            return HandlerTuple(ndivide=1).create_artists(legend, orig.parts, xd, yd, w, h, fs, trans)
+    return {_Labelled: _H()}
 
 
 def _name(n: str) -> str:
@@ -115,6 +138,7 @@ class _MapWorker(QObject):
 
 class SigmaMapPanel(QWidget):
     jumpRequested = Signal(object)           # Params
+    keyframeRequested = Signal(object)       # Params (shift-click adds a path keyframe)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -122,6 +146,7 @@ class SigmaMapPanel(QWidget):
         self.running = False
         self.current: Params | None = None
         self.lock_check = None               # callable(Params) -> bool; set by the main window
+        self.path_overlay = None             # dict(samples, keys, bad, cur) from the path dock
         self._axes = []
         self._drag = False
         self._pending_jump = None
@@ -136,7 +161,8 @@ class SigmaMapPanel(QWidget):
         self.note.setStyleSheet(f"color:{style.c()['muted']};padding:2px 8px;")
         v.addWidget(self.note)
         self.hover = QLabel("")
-        self.hover_hint = "Hover the map to read a point; click to jump there, drag to move."
+        self.hover_hint = ("Hover the map to read a point; click to jump there, drag to move; "
+                           "shift-click adds a path keyframe.")
         self.hover.setStyleSheet(f"color:{style.c()['text']};padding:2px 8px;")
         self.hover.setMinimumHeight(18)
         v.insertWidget(1, self.hover)
@@ -562,8 +588,9 @@ class SigmaMapPanel(QWidget):
                     ax.plot([-2, 2], [0, 0], ls="", marker="|", ms=16, mew=2.2, color="#f2c14e", zorder=6)
                     box = dict(boxstyle="round,pad=0.2", fc="#101114", ec="none", alpha=0.75)
                     for yk, va, dy in ((KAPPA_MAX_BOOK, "bottom", 6), (-KAPPA_MAX_BOOK, "top", -6)):
-                        ax.annotate(f"κ = {yk:+.4f}".replace("-", "−"), (0, yk), xytext=(14, dy),
-                                    textcoords="offset points", fontsize=8.5, color="#f2c14e", va=va, bbox=box)
+                        ax.annotate(f"κ = {yk:+.4f}".replace("-", "−"), (0, yk), xytext=(-12, dy),
+                                    textcoords="offset points", fontsize=8.5, color="#f2c14e", va=va, ha="right",
+                                    bbox=box)
                     for xk, ha, dx in ((2.0, "left", 8), (-2.0, "right", -8)):
                         ax.annotate(f"γ = {xk:+g}".replace("-", "−"), (xk, 0), xytext=(dx, -12),
                                     textcoords="offset points", fontsize=8.5, color="#f2c14e", ha=ha, va="top",
@@ -575,6 +602,7 @@ class SigmaMapPanel(QWidget):
                             Line2D([], [], color="#f2c14e", lw=1.4, label="μ₋ contours (south), same styles")]
             if self.chk_edge.isChecked():
                 handles.append(Line2D([], [], color=p["plot_ink"], lw=1.4, label="edge of the global region"))
+            self._draw_path(axs, spec, handles)
             # the current solution
             cur = self.current
             if cur is not None:
@@ -583,10 +611,19 @@ class SigmaMapPanel(QWidget):
                            for n in PARAM_NAMES if n not in (spec.x_name, spec.y_name)) \
                     and abs(cur.xb - spec.base.xb) < 1e-12
                 for ax in axs:
-                    ax.plot([cx], [cy], marker="o", ms=10, mfc=MARK if same else "none", mec="white" if same else MARK,
-                            mew=1.8, zorder=10, clip_on=False)
-                handles.append(Line2D([], [], ls="", marker="o", ms=9, mfc=MARK, mec="white", mew=1.5,
-                                      label="current solution"))
+                    ring = bool(self.path_overlay and self.path_overlay.get("keys"))
+                    if ring and same:          # a ring, so keyframe badges under it stay readable
+                        ax.plot([cx], [cy], marker="o", ms=17, mfc="none", mec=MARK, mew=2.6, zorder=12,
+                                clip_on=False)
+                    else:
+                        ax.plot([cx], [cy], marker="o", ms=11, mfc=MARK if same else "none",
+                                mec="white" if same else MARK, mew=2.0, zorder=12, clip_on=False)
+                if self.path_overlay and self.path_overlay.get("keys"):
+                    handles.append(Line2D([], [], ls="", marker="o", ms=12, mfc="none", mec=MARK, mew=2.2,
+                                          label="current solution (on the path: the preview position)"))
+                else:
+                    handles.append(Line2D([], [], ls="", marker="o", ms=9, mfc=MARK, mec="white", mew=1.5,
+                                          label="current solution"))
                 if not same:
                     handles.append(Line2D([], [], ls="", marker="o", ms=9, mfc="none", mec=MARK, mew=1.8,
                                           label="current solution (other fixed values: recompute)"))
@@ -594,12 +631,74 @@ class SigmaMapPanel(QWidget):
             fixed = ",  ".join(f"{_name(n)} = {getattr(spec.base, n):.4g}" for n in others).replace("-", "−")
             self.fig.suptitle(f"Σ-slice in ({_name(spec.x_name)}, {_name(spec.y_name)})   at   {fixed},  "
                               f"x₀ = {spec.base.xb:g}", fontsize=10, color=p["plot_ink"])
-            self.fig.legend(handles=handles, loc="outside lower center", ncol=2, fontsize=8.5,
-                            frameon=False)
+            self.fig.legend(handles=handles, labels=[h.get_label() for h in handles], loc="outside lower center",
+                            ncol=2, fontsize=8.5, frameon=False, handler_map=_legend_map())
             from matplotlib.widgets import MultiCursor
             self._cursor = MultiCursor(list(axs), useblit=True, horizOn=True, color=p["plot_ink"],
                                        lw=0.6, alpha=0.6)
         self.canvas.draw_idle()
+
+    def set_path_overlay(self, overlay) -> None:
+        self.path_overlay = overlay
+        if not self.running:
+            self.redraw()
+
+    def _draw_path(self, axs, spec, handles):
+        """The path dock's path projected on the map axes: samples, red where not global, numbered keys."""
+        ov = self.path_overlay
+        if not ov or not ov.get("keys"):
+            return
+        from matplotlib.lines import Line2D
+        xn, yn = spec.x_name, spec.y_name
+        xs = np.array([getattr(q, xn) for q in ov["samples"]])
+        ys = np.array([getattr(q, yn) for q in ov["samples"]])
+        kind = ov.get("kind")
+        kind = np.asarray(kind) if kind is not None and len(kind) == len(xs) else np.array(["ok"] * len(xs))
+        bad = kind != "ok"
+        kx = [getattr(q, xn) for q in ov["keys"]]
+        ky = [getattr(q, yn) for q in ov["keys"]]
+        halo = "#101114" if style.MODE == "dark" else "#ffffff"
+        for ax in axs:
+            ax.plot(xs, ys, color=halo, lw=4.2, zorder=7, solid_capstyle="round")
+            ax.plot(xs, ys, color="#ffffff" if style.MODE == "dark" else "#222222", lw=2.0, zorder=8)
+            for k, ls in (("blowup", "-"), ("unsafe", "-")):
+                m = kind == k
+                if m.any():   # include the neighbours so short runs still show as segments
+                    mm = m | np.r_[m[1:], False] | np.r_[False, m[:-1]]
+                    yb = np.where(mm, ys, np.nan)
+                    ax.plot(xs, yb, color="#000000", lw=7.5, zorder=8.4, solid_capstyle="butt")
+                    ax.plot(xs, yb, color=PATH_FAIL[k], lw=4.5, ls=ls, zorder=8.5, solid_capstyle="butt")
+            for q in ov.get("events", []):            # the timeline's event triangles, on the map
+                ax.plot([getattr(q, xn)], [getattr(q, yn)], marker="v", ms=11, mfc="#f2c14e", mec=halo,
+                        mew=1.0, zorder=10.5, ls="")
+            ax.plot(kx, ky, ls="", marker="o", ms=13, mfc="#f2c14e", mec=halo, mew=1.2, zorder=11,
+                    clip_on=False)
+            for i, (a, b) in enumerate(zip(kx, ky)):
+                ax.annotate(str(i + 1), (a, b), ha="center", va="center", fontsize=7.5, color="#111111",
+                            fontweight="bold", zorder=11.5, annotation_clip=False)
+        handles.append(Line2D([], [], color="#ffffff" if style.MODE == "dark" else "#222222", lw=2,
+                              marker="o", ms=8, mfc="#f2c14e", mec=halo, label="path, global part (numbered keyframes)"))
+        labels_extra = []
+        from matplotlib.legend_handler import HandlerTuple   # noqa: F401  (tuples drawn as overlays)
+        if (kind == "blowup").any():
+            handles.append((Line2D([], [], color="#000000", lw=7.5),
+                            Line2D([], [], color=PATH_FAIL["blowup"], lw=4.5)))
+            labels_extra.append("path: not global, blows up (as on the timeline)")
+        if (kind == "unsafe").any():
+            handles.append((Line2D([], [], color="#000000", lw=7.5),
+                            Line2D([], [], color=PATH_FAIL["unsafe"], lw=4.5)))
+            labels_extra.append("path: not global, a pole fails the terminal test")
+        # tuple handles carry no label of their own: wrap them so the legend can name them
+        for i, h in enumerate(handles):
+            if isinstance(h, tuple):
+                handles[i] = _Labelled(h, labels_extra.pop(0))
+        if ov.get("events"):
+            handles.append(Line2D([], [], ls="", marker="v", ms=9, mfc="#f2c14e", mec=halo,
+                                  label="path event (as on the timeline)"))
+        other = [n for n in ov.get("varying", []) if n not in (xn, yn)]
+        if other:
+            handles.append(Line2D([], [], ls="", label="path also varies " + ", ".join(_name(n) for n in other)
+                                  + " (not shown on this map)"))
 
     def refresh_style(self):
         self.note.setStyleSheet(f"color:{style.c()['muted']};padding:2px 8px;")
@@ -618,6 +717,9 @@ class SigmaMapPanel(QWidget):
     def _press(self, ev):
         q = self._point(ev)
         if q is None or ev.button != 1:
+            return
+        if ev.key == "shift":                # a keyframe for the path dock, no jump
+            self.keyframeRequested.emit(q)
             return
         self._drag = True
         self._request(q)

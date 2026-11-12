@@ -5,7 +5,7 @@ solutions of the stationary Navier–Stokes equations in R³ \ {axis}. It follow
 monograph *Axisymmetric (−1)-homogeneous solutions of the stationary Navier–Stokes
 equations with swirl*, which is in `docs/`.
 
-**Status:** milestones 1 to 5 are done.
+**Status:** milestones 1 to 6 are done.
 
 - Milestone 1: core solver, pole diagnostics, regression tests.
 - Milestone 2: the Qt shell, with the parameter panel, the live status and stacked
@@ -40,7 +40,24 @@ equations with swirl*, which is in `docs/`.
   κ_max = 4.1608 and Landau window ±2 marked; a test checks the map against the
   edges γ₋(κ), γ₊(κ) from bisection.
 
-Paths and movies come next.
+- Milestone 6: paths, movies and sessions.
+  - **Path & movie** (button above the views) opens a bottom panel. Keyframes come
+    from the current solution (**+ Add current**), from **shift-click** on the Σ-map,
+    or by typing into the table. The path between them is linear or a spline, and
+    keyframes can also store the camera, the slice plane and the seeds.
+  - Every frame is checked in the background. The timeline shows green (global),
+    teal (global with an R/L1/L2 pole) or red (not global). Events (leaving or
+    re-entering the global set, a pole changing type) are listed with their time,
+    located between frames by bisection. The path is drawn on the Σ-map too.
+  - Play or scrub to preview: the 3D view, slice and profiles follow.
+  - **Export MP4…** renders the 3D view, the slice, the profiles or a combination at
+    a chosen resolution and frame rate, with a caption (t, the six data, pole status).
+    Frames that are not global are held at the last global frame (dimmed and
+    labelled), left out, or drawn with the label, as you choose.
+  - **File → Save / Open session** writes everything to one JSON file: the data,
+    3D settings, camera, plane, slice and plot options, the Σ-map and the path.
+
+Windows packaging comes next.
 
 Start the app with:
 

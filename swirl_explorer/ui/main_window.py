@@ -4,7 +4,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QMainWindow, QDockWidget, QTabWidget, QLabel, QWidget, QVBoxLayout,
-                               QMessageBox)
+                               QHBoxLayout, QMessageBox)
 
 from ..core.params import Params
 from .panels.params_panel import ParamsPanel
@@ -34,6 +34,8 @@ class MainWindow(QMainWindow):
         self.solver.worker.finished.connect(self._on_solved)
         self.solver.worker.failed.connect(self._on_failed)
         self.last = None
+        self.exporting = False               # a movie export owns the views
+        self.session_path = None
 
         # centre: views (3D, slice, Σ-map arrive in milestones 3-5)
         self.tabs = QTabWidget()
@@ -103,8 +105,38 @@ class MainWindow(QMainWindow):
         self.sigma.lock_check = self._lock_allows
         self.tabs.currentChanged.connect(self._tab_changed)
         self._docks_sized = False
+        # bottom: the path editor (hidden until asked for, the 3D view keeps the height)
+        from .panels.path_panel import PathPanel
+        from . import panel_state as ps
+        self.path_panel = PathPanel()
+        self.path_panel.current_params = lambda: self.params.params()
+        self.path_panel.capture = lambda keys: ps.capture_extras(self, keys)
+        self.path_panel.applyFrame.connect(self._apply_frame)
+        self.path_panel.pathChanged.connect(lambda: self.sigma.set_path_overlay(self.path_panel.overlay()))
+        self.path_panel.exportRequested.connect(self.export_movie)
+        self.sigma.keyframeRequested.connect(self._sigma_keyframe)
+        self.dock_path = QDockWidget("Path")
+        self.dock_path.setObjectName("dock_path")
+        self.dock_path.setWidget(self.path_panel)
+        self.dock_path.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable
+                                   | QDockWidget.DockWidgetClosable)
+        self.addDockWidget(Qt.BottomDockWidgetArea, self.dock_path)
+        self.dock_path.hide()
+        self._docks = self._docks + (self.dock_path,)
 
         m = self.menuBar().addMenu("&File")
+        for text, fn, key in (("Open session…", self.open_session, "Ctrl+O"),
+                              ("Save session", self.save_session, "Ctrl+S"),
+                              ("Save session as…", lambda: self.save_session(ask=True), "Ctrl+Shift+S")):
+            a = QAction(text, self)
+            a.setShortcut(key)
+            a.triggered.connect(lambda _=False, f=fn: f())
+            m.addAction(a)
+        m.addSeparator()
+        a = QAction("Export movie of the path…", self)
+        a.triggered.connect(self.export_movie)
+        m.addAction(a)
+        m.addSeparator()
         for text, kind in (("Export plots as PNG…", "png"), ("Export plots as SVG…", "svg"),
                            ("Export curves as CSV…", "csv")):
             a = QAction(text, self)
@@ -125,10 +157,25 @@ class MainWindow(QMainWindow):
         self.slice_btn.setDefaultAction(self.act_slice)
         self.slice_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.slice_btn.setStyleSheet("QToolButton{padding:3px 10px;}")
-        self.tabs.setCornerWidget(self.slice_btn, Qt.TopRightCorner)
+        self.act_path = self.dock_path.toggleViewAction()
+        self.act_path.setText("Path && movie")
+        self.act_path.setToolTip("keyframes in parameter space, preview and MP4 export (bottom panel)")
+        self.path_btn = QToolButton()
+        self.path_btn.setDefaultAction(self.act_path)
+        self.path_btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.path_btn.setStyleSheet("QToolButton{padding:3px 10px;}")
+        corner = QWidget()
+        ch = QHBoxLayout(corner)
+        ch.setContentsMargins(0, 0, 4, 0)
+        ch.setSpacing(4)
+        ch.addWidget(self.path_btn)
+        ch.addWidget(self.slice_btn)
+        self.tabs.setCornerWidget(corner, Qt.TopRightCorner)
         self._show_slice(False)
         for d in self._docks:
-            vm.addAction(d.toggleViewAction())
+            if d is not self.dock_path:
+                vm.addAction(d.toggleViewAction())
+        vm.addAction(self.act_path)
         vm.addSeparator()
         for text, mode in (("Dark theme", "dark"), ("Light theme", "light")):
             a = QAction(text, self)
@@ -148,6 +195,8 @@ class MainWindow(QMainWindow):
         self.solver.worker.submit(p)
 
     def _on_solved(self, p, sol, sm, ms):
+        if self.exporting:                   # the movie export draws the views itself
+            return
         self.last = (p, sol, sm)
         self.status.show_summary(sm, ms)
         self.plots.set_current(sol, sm)
@@ -170,6 +219,7 @@ class MainWindow(QMainWindow):
         self.view3d.refresh_style()
         self.slice.refresh_style()
         self.sigma.refresh_style()
+        self.path_panel.refresh_style()
         if self.last is not None:
             p, sol, sm = self.last
             self.status.show_summary(sm, 0.0)
@@ -211,6 +261,119 @@ class MainWindow(QMainWindow):
             self.split.setSizes([10000, 10000])         # 3D and slice equally wide
             self.dock_slice.raise_()
 
+    # ---------------------------------------------------------------- path, movie, sessions
+    def _apply_frame(self, p, extras):
+        if self.exporting:
+            return
+        from . import panel_state as ps
+        self.params.set_params(p)            # the path may go where the lock would refuse: shown in red
+        ps.apply_extras(self, extras)
+
+    def _sigma_keyframe(self, q):
+        self.dock_path.show()
+        self.path_panel.add_keyframe(q)
+        self.statusBar().showMessage(f"keyframe {len(self.path_panel.path)} added from the Σ-map", 4000)
+
+    def export_movie(self):
+        if len(self.path_panel.path) < 2:
+            self.dock_path.show()
+            QMessageBox.information(self, "Export movie", "Make a path first: it needs at least two keyframes.")
+            return
+        from .movie_export import ExportDialog, MovieExporter
+        pp = self.path_panel
+        dlg = ExportDialog(self, pp.n_frames(), pp.fps.value(), self.act_slice.isChecked(),
+                           getattr(self, "_movie_path", ""), pp.policy.currentData())
+        if dlg.exec() != ExportDialog.Accepted:
+            return
+        o = dlg.options()
+        self._movie_path = o["path"]
+        self._exporter = MovieExporter(self, o)
+        self._exporter.finished.connect(self._movie_done)
+        self._exporter.start()
+
+    def _movie_done(self, msg: str) -> None:
+        self.statusBar().showMessage(msg, 15000)
+        if not getattr(self, "quiet", False):
+            QMessageBox.information(self, "Export movie", msg)
+
+    def collect_session(self):
+        from ..io.session import Session
+        from . import panel_state as ps
+        from ..viz import style
+        sec = {
+            "lock": self.params.lock.isChecked(),
+            "scene": ps.scene_state(self.view3d),
+            "camera": ps.camera_state(self.view3d),
+            "plane": ps.plane_state(self.slice_ctrl),
+            "slice": ps.slice_options(self.slice),
+            "plots": ps.plots_state(self.plots),
+            "sigma": ps.sigma_state(self.sigma),
+            "movie": self.path_panel.state(),
+            "ui": {"theme": style.MODE, "tab": self.tabs.currentIndex(), "show_slice": self.act_slice.isChecked(),
+                   "show_path": self.dock_path.isVisible()},
+        }
+        return Session(self.params.params(), sec, self.path_panel.path)
+
+    def apply_session(self, s) -> None:
+        from . import panel_state as ps
+        sec = s.sections
+        ui = sec.get("ui", {})
+        if ui.get("theme") in ("dark", "light"):
+            self.set_theme(ui["theme"])
+        self.act_slice.setChecked(bool(ui.get("show_slice", False)))
+        if "lock" in sec:
+            self.params.lock.setChecked(bool(sec["lock"]))
+        ps.apply_scene(self.view3d, sec.get("scene"))
+        ps.apply_plane(self.slice, sec.get("plane"))
+        ps.apply_slice_options(self.slice, sec.get("slice"))
+        ps.apply_plots(self.plots, sec.get("plots"))
+        ps.apply_sigma(self.sigma, sec.get("sigma"))
+        mv = sec.get("movie", {})
+        self.path_panel.set_path(s.path, mv.get("frames"), mv.get("fps"))
+        self.path_panel.loop.setChecked(bool(mv.get("loop", False)))
+        self.dock_path.setVisible(bool(ui.get("show_path", s.path is not None)))
+        self.params.set_params(s.params)
+        if sec.get("camera"):
+            ps.apply_camera(self.view3d, sec["camera"])
+        if isinstance(ui.get("tab"), int) and 0 <= ui["tab"] < self.tabs.count():
+            self.tabs.setCurrentIndex(ui["tab"])
+
+    def save_session(self, ask: bool = False, path: str | None = None) -> str | None:
+        from PySide6.QtWidgets import QFileDialog
+        from ..io.session import save_session
+        path = path or self.session_path
+        if ask or not path:
+            path, _ = QFileDialog.getSaveFileName(self, "Save session", path or "session.swirl.json",
+                                                  "Swirl Explorer session (*.json)")
+            if not path:
+                return None
+        try:
+            save_session(self.collect_session(), path)
+        except Exception as exc:
+            QMessageBox.warning(self, "Save session", f"Could not save:\n{exc}")
+            return None
+        self.session_path = path
+        self.statusBar().showMessage(f"session saved to {path}", 6000)
+        return path
+
+    def open_session(self, path: str | None = None) -> bool:
+        from PySide6.QtWidgets import QFileDialog
+        from ..io.session import load_session, SessionError
+        if not path:
+            path, _ = QFileDialog.getOpenFileName(self, "Open session", self.session_path or "",
+                                                  "Swirl Explorer session (*.json);;All files (*)")
+            if not path:
+                return False
+        try:
+            s = load_session(path)
+        except (OSError, SessionError) as exc:
+            QMessageBox.warning(self, "Open session", f"Could not open {path}:\n{exc}")
+            return False
+        self.apply_session(s)
+        self.session_path = path
+        self.statusBar().showMessage(f"session loaded from {path}", 6000)
+        return True
+
     def _about(self):
         QMessageBox.information(
             self, "Conventions",
@@ -234,4 +397,5 @@ class MainWindow(QMainWindow):
         self.view3d.shutdown()
         self.slice.shutdown()
         self.sigma.shutdown()
+        self.path_panel.shutdown()
         super().closeEvent(ev)
