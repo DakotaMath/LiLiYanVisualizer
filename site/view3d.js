@@ -209,6 +209,7 @@ export class View3D {
                                  new THREE.MeshPhongMaterial({ color: a.color, shininess: 40 }));
       rod.rotation.x = Math.PI / 2;
       rod.position.set(0, 0, (a.z0 + a.z1) / 2);
+      rod.userData.noOcclude = true;              // its own label sits at its end
       g.add(rod);
       if (a.flow) g.add(coneAlong([0, 0, a.sign * 0.5], [0, 0, a.flow], 0.26, 0.08, a.color));
       this.labels.push({ pos: [0, 0, a.sign * 1.1], text: a.label, bg: a.color, group: "scene" });
@@ -360,7 +361,7 @@ export class View3D {
     this._occT = setTimeout(() => {
       const rc = new THREE.Raycaster(), dir = new THREE.Vector3(), p = new THREE.Vector3();
       const meshes = [];
-      this.groups.scene.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !(o.material && o.material.transparent)) meshes.push(o); });
+      this.groups.scene.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !o.userData.noOcclude && !(o.material && o.material.transparent)) meshes.push(o); });
       const camDir = new THREE.Vector3(); this.camera.getWorldDirection(camDir);
       let changed = false;
       for (const L of this.labels) {
@@ -369,7 +370,7 @@ export class View3D {
         // orthographic camera: cast along the view direction from in front of the label
         const origin = p.clone().addScaledVector(camDir, -20);
         rc.set(origin, camDir);
-        rc.far = 20 - 0.03;
+        rc.far = 20 - 0.12;                      // a little tolerance, as VTK's z-buffer test
         const hit = rc.intersectObjects(meshes, false).length > 0;
         if (hit !== !!L.hidden) { L.hidden = hit; changed = true; }
       }

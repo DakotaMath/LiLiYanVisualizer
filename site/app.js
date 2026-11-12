@@ -655,6 +655,10 @@ function setTheme(t) {
 }
 
 // ============================================================================ start
+window.__errors = [];
+window.addEventListener("error", (e) => window.__errors.push(String(e.message)));
+window.addEventListener("unhandledrejection", (e) => window.__errors.push(String(e.reason)));
+
 async function main() {
   const steps = ["Python loaded", "numpy, scipy, matplotlib loaded"];
   const t0 = performance.now();
@@ -686,6 +690,7 @@ async function main() {
     pres.appendChild(b);
   }
   S.idle = () => !running && jobs.size === 0;
+  window.__idle = S.idle;                            // for scripts/web_screenshots.py
   S.show3d = () => { if (S.tab !== "view3d") setTab("view3d"); };
   path = new PathDock({ py, $, getParams: () => S.params, setParams, view, S,
     onChange: () => { if (S.tab === "sigma") refreshSigma(); }, schedule,

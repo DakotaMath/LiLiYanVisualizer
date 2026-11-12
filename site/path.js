@@ -164,6 +164,7 @@ export class PathDock {
     const g = ++this.scanGen;
     if (this.path.keyframes.length < 2) { this.drawTimeline(); return; }
     this.$("pa-frame").innerHTML = `<span class="muted">checking every frame…</span>`;
+    this.$("pa-events").innerHTML = "";
     const r = await this.schedule("scan", "path_scan", [this.path, this.n()]);
     if (!r || g !== this.scanGen) return;
     this.frames = r.frames; this.events = r.events;
