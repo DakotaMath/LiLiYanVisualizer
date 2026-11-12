@@ -62,6 +62,19 @@ equations with swirl*, which is in `docs/`.
 
 Effective coordinates and continuation (milestone 8) come later.
 
+## Repository layout
+
+```
+swirl_explorer/
+  core/  viz/  io/     shared numerics, plots, movies and sessions; no Qt
+  ui/                  desktop front end (PySide6)
+  web/                 browser front end (trame), in progress
+packaging/             Windows build (PyInstaller spec, launcher, icon)
+tests/                 one suite; tests/test_layout.py keeps the shared code free of front-end imports
+requirements.txt       desktop
+requirements-web.txt   browser version
+```
+
 ## Running it
 
 From source (Python 3.11 or newer):
