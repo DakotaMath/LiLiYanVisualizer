@@ -128,6 +128,8 @@ def predicted_exponents(stratum: str, mu: float, f_lim: float, U_lim: float) -> 
     elif stratum == "R":
         out["u_phi"] = (-1.0 - 2 * mu, "d^(-1-2μ)")
         out["u_theta"] = (-1.0, "(-2-2μ)/d")
+        # not in the brief's table: derived from h + mu = O(E^(1-2mu)) (Table 4.1), unverified
+        out["u_r"] = (-4.0 * mu, "d^(-4μ) (derived candidate)")
     elif stratum == "L1":
         out["u_r"] = (-2.0, "-2/(d² ln²(1/d))")
         out["u_theta"] = (-1.0, "-2/d")
