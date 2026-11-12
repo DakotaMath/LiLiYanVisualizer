@@ -1,15 +1,18 @@
 """Sigma-slice maps: globality and pole strata on a 2D slice of the parameter space R^6.
 
 Pick two of the six data (c1, c2, c3, gamma, A, kappa), fix the others, and shoot
-from the base point to both poles at every grid point (fast Fortran DOP853).  Each
-pole is classified from its end state by the same rules as
-:func:`swirl_explorer.core.poles.diagnose_pole`, without extrapolation.
+from the base point to both poles at every grid point.  Each pole is classified from its
+end state by the same rules as :func:`swirl_explorer.core.poles.diagnose_pole`, without
+extrapolation (:func:`quick_pole`).
 
-The computation is chunked so that a GUI worker can report progress and cancel;
-``workers > 1`` uses a process pool.
+A map integrates whole blocks of grid points at once (:mod:`swirl_explorer.core.sigma_fast`,
+the same DOP853 method and tolerances as :func:`quick_pole`, ~10x faster per core).  The
+computation is chunked so that a GUI worker can report progress and cancel; ``workers > 1``
+uses a process pool, kept warm for later maps.
 """
 from __future__ import annotations
 
+import atexit
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 import math
@@ -98,16 +101,54 @@ class SigmaMapResult:
         return np.full(X.shape, s.base.kappa)
 
 
-def _row(args) -> tuple[int, list]:
-    spec, j = args
+def rows_poles(spec: SigmaMapSpec, rows) -> tuple[list, tuple, tuple]:
+    """Both poles at every point of the given rows, all integrated together (core.sigma_fast).
+
+    Returns (rows, north, south); north/south = (code, mu, f_end, x_blowup), each of shape
+    (len(rows), nx).  Same results as quick_pole at each point, to the integration tolerance."""
+    from .sigma_fast import poles_at
+    rows = [int(j) for j in rows]
     xs, ys = spec.axes()
-    row = []
-    for xv in xs:
-        p = spec.params_at(xv, ys[j])
-        n = quick_pole(p, +1, spec.xi_max, spec.rtol)
-        s = quick_pole(p, -1, spec.xi_max, spec.rtol)
-        row.append((n, s))
-    return j, row
+    X, Y = np.meshgrid(xs, ys[rows])
+    P = {k: np.full(X.size, getattr(spec.base, k), float) for k in PARAM_NAMES}
+    P[spec.x_name] = X.ravel()
+    P[spec.y_name] = Y.ravel()
+    n, s = poles_at(P, spec.base.xb, spec.xi_max, spec.rtol)
+    sh = X.shape
+    return rows, tuple(a.reshape(sh) for a in n), tuple(a.reshape(sh) for a in s)
+
+
+def _rows_job(args):
+    spec, rows = args
+    return rows_poles(spec, rows)
+
+
+# One pool for the life of the process: starting worker processes (and importing numpy/scipy
+# in each) costs more than a whole small map, so later maps reuse the warm pool.
+_POOL: Optional[ProcessPoolExecutor] = None
+_POOL_N = 0
+
+
+def _pool(workers: int) -> ProcessPoolExecutor:
+    global _POOL, _POOL_N
+    if _POOL is None or _POOL_N != workers:
+        if _POOL is not None:
+            _POOL.shutdown(wait=False, cancel_futures=True)
+        _POOL, _POOL_N = ProcessPoolExecutor(max_workers=workers), workers
+    return _POOL
+
+
+def shutdown_pool() -> None:
+    global _POOL
+    if _POOL is not None:
+        _POOL.shutdown(wait=False, cancel_futures=True)
+        _POOL = None
+
+
+atexit.register(shutdown_pool)
+
+# a job of about this many points (two lanes each) keeps the batched kernel efficient
+JOB_POINTS = 1024
 
 
 def compute_sigma_map(spec: SigmaMapSpec,
@@ -116,7 +157,10 @@ def compute_sigma_map(spec: SigmaMapSpec,
                       workers: int = 1,
                       on_start: Optional[Callable[["SigmaMapResult"], None]] = None) -> SigmaMapResult:
     """``on_start(res)`` receives the result object before any row is computed; it is filled
-    in place row by row (``res.done``), so a GUI can draw partial maps while it grows."""
+    in place a few rows at a time (``res.done``), so a GUI can draw partial maps while it grows.
+
+    Rows are integrated in blocks by the batched kernel (core.sigma_fast); ``workers > 1``
+    spreads the blocks over a process pool that is kept for later maps."""
     if spec.x_name not in PARAM_NAMES or spec.y_name not in PARAM_NAMES:
         raise ValueError("unknown parameter name")
     shape = (spec.ny, spec.nx)
@@ -126,35 +170,47 @@ def compute_sigma_map(spec: SigmaMapSpec,
                          np.full(shape, np.nan), np.full(shape, np.nan),
                          np.full(shape, np.nan), np.zeros(shape, bool))
 
-    def store(j, row):
-        for i, ((cn, mn, fn, bn), (cs, ms, fs, bs)) in enumerate(row):
-            res.code_n[j, i], res.mu_n[j, i], res.f_n[j, i] = cn, mn, fn
-            res.code_s[j, i], res.mu_s[j, i], res.f_s[j, i] = cs, ms, fs
-            res.blow_x[j, i] = bn if math.isfinite(bn) else bs
-            res.done[j, i] = True
+    def store(rows, n, s):
+        res.code_n[rows], res.mu_n[rows], res.f_n[rows] = n[0], n[1], n[2]
+        res.code_s[rows], res.mu_s[rows], res.f_s[rows] = s[0], s[1], s[2]
+        res.blow_x[rows] = np.where(np.isfinite(n[3]), n[3], s[3])
+        res.done[rows] = True
 
     if on_start:
         on_start(res)
     # centre rows first: the interesting part of a map is usually in the middle
     order = sorted(range(spec.ny), key=lambda j: abs(j - (spec.ny - 1) / 2))
-    jobs = [(spec, j) for j in order]
+    per = max(1, round(JOB_POINTS / spec.nx))
+    if workers > 1:                     # enough jobs to keep every worker busy to the end
+        per = max(1, min(per, math.ceil(spec.ny / (4 * workers))))
+    else:                               # small jobs early on, so a partial map shows up soon
+        per = max(1, min(per, math.ceil(spec.ny / 8)))
+    jobs = [(spec, order[k:k + per]) for k in range(0, spec.ny, per)]
+    done_rows = 0
     if workers <= 1:
-        for k, job in enumerate(jobs):
+        for job in jobs:
             if cancelled and cancelled():
                 break
-            store(*_row(job))
+            store(*_rows_job(job))
+            done_rows += len(job[1])
             if progress:
-                progress((k + 1) / spec.ny)
+                progress(done_rows / spec.ny)
     else:
-        with ProcessPoolExecutor(max_workers=workers) as ex:
-            from concurrent.futures import as_completed
-            futs = [ex.submit(_row, job) for job in jobs]
-            for k, fu in enumerate(as_completed(futs)):
+        from concurrent.futures import as_completed
+        ex = _pool(workers)
+        futs = [ex.submit(_rows_job, job) for job in jobs]
+        try:
+            for fu in as_completed(futs):
                 if cancelled and cancelled():
                     for f2 in futs:
                         f2.cancel()
                     break
-                store(*fu.result())
+                rows, n, s = fu.result()
+                store(rows, n, s)
+                done_rows += len(rows)
                 if progress:
-                    progress((k + 1) / spec.ny)
+                    progress(done_rows / spec.ny)
+        except Exception:
+            shutdown_pool()             # a broken pool is not reused
+            raise
     return res

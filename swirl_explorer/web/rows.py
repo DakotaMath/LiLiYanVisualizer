@@ -5,7 +5,7 @@ import json
 import math
 
 from ..core.params import Params, PARAM_NAMES
-from ..core.sigma_map import SigmaMapSpec, quick_pole
+from ..core.sigma_map import SigmaMapSpec, rows_poles
 
 
 def _spec(d: dict) -> SigmaMapSpec:
@@ -16,21 +16,15 @@ def _spec(d: dict) -> SigmaMapSpec:
 
 
 def sigma_rows(spec_d: dict, rows: list[int]) -> list[dict]:
-    """Shoot both poles at every point of the given rows (same calls as core.sigma_map)."""
+    """Both poles at every point of the given rows, integrated together (core.sigma_map.rows_poles)."""
     spec = _spec(spec_d)
-    xs, ys = spec.axes()
+    rows, n, s = rows_poles(spec, rows)
+    fin = lambda a: [float(v) if math.isfinite(v) else None for v in a]
     out = []
-    for j in rows:
-        r = {"j": int(j), "cn": [], "cs": [], "mn": [], "ms": [], "fn": [], "fs": [], "bx": []}
-        for xv in xs:
-            p = spec.params_at(float(xv), float(ys[j]))
-            cn, mn, fn, bn = quick_pole(p, +1, spec.xi_max, spec.rtol)
-            cs, ms, fs, bs = quick_pole(p, -1, spec.xi_max, spec.rtol)
-            r["cn"].append(int(cn))
-            r["cs"].append(int(cs))
-            for k, v in (("mn", mn), ("ms", ms), ("fn", fn), ("fs", fs), ("bx", bn if math.isfinite(bn) else bs)):
-                r[k].append(float(v) if math.isfinite(v) else None)
-        out.append(r)
+    for k, j in enumerate(rows):
+        bx = [bn if math.isfinite(bn) else bs for bn, bs in zip(n[3][k], s[3][k])]
+        out.append({"j": int(j), "cn": [int(c) for c in n[0][k]], "cs": [int(c) for c in s[0][k]],
+                    "mn": fin(n[1][k]), "ms": fin(s[1][k]), "fn": fin(n[2][k]), "fs": fin(s[2][k]), "bx": fin(bx)})
     return out
 
 

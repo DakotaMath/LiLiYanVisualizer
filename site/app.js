@@ -12,7 +12,9 @@ const ratio = () => Math.min(window.devicePixelRatio || 1, 2);
 // ============================================================================ Python workers
 class PyWorker {
   constructor(role, onProgress) {
-    this.w = new Worker(`py-worker.js?role=${role}`, { type: "module" });
+    // role "sigma": the Σ-map pool, plain JavaScript (sigma-worker.js); otherwise Pyodide
+    this.w = role === "sigma" ? new Worker("sigma-worker.js", { type: "module" })
+                              : new Worker(`py-worker.js?role=${role}`, { type: "module" });
     this.n = 0; this.pending = new Map();
     this.ready = new Promise((res, rej) => { this._ready = res; this._fail = rej; });
     this.w.onmessage = (ev) => {
@@ -238,7 +240,9 @@ function updateNormalText(r) {
 }
 
 // ============================================================================ Σ-map
-let pool = [], poolSize = Math.max(1, Math.min((navigator.hardwareConcurrency || 4) - 1, 6));
+// Σ-map workers run sigma-kernel.js (no Python to load), so they start at once and cost little
+// memory: one per spare core
+let pool = [], poolSize = Math.max(1, Math.min((navigator.hardwareConcurrency || 4) - 1, 16));
 let sigmaRun = 0;
 
 function sigmaSpec(base) {
@@ -247,7 +251,7 @@ function sigmaSpec(base) {
 }
 
 function startPool() {                 // also on hovering the Σ-map tab: a head start for the first map
-  if (!pool.length) pool = Array.from({ length: poolSize }, () => new PyWorker("pool"));
+  if (!pool.length) pool = Array.from({ length: poolSize }, () => new PyWorker("sigma"));
 }
 
 async function computeSigma(base) {
@@ -271,7 +275,6 @@ async function computeSigma(base) {
   }
   s.running = true; s.spec = spec;
   $("sg-compute").disabled = true; $("sg-cancel").disabled = false; $("sg-bar").style.width = "0%";
-  if (!pool.length) $("sigma-note").textContent = `starting ${poolSize} background workers (first map only)…`;
   startPool();
   await py.call("sigma_start", spec);
   const order = [...Array(spec.ny).keys()].sort((a, b) => Math.abs(a - (spec.ny - 1) / 2) - Math.abs(b - (spec.ny - 1) / 2));

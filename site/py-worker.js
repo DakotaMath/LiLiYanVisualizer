@@ -1,6 +1,7 @@
 // Python in a Web Worker (Pyodide). Two roles:
 //   main  numpy + scipy + matplotlib, the full bridge (swirl_explorer.web.api)
-//   pool  numpy + scipy only, Σ-map rows (swirl_explorer.web.rows); started on the first Σ-map
+//   pool  numpy + scipy only, Σ-map rows (swirl_explorer.web.rows); no longer started by the page,
+//         whose Σ-map pool runs sigma-worker.js (JavaScript), but kept for testing the Python rows
 // Messages in:  {id, fn, args}          out: {id, ok, result | error}   (result is JSON text)
 // (a module worker: importScripts() of the classic pyodide.js is blocked in some browsers)
 import { loadPyodide } from "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.mjs";
