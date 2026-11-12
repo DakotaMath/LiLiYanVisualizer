@@ -71,8 +71,8 @@ def fig_pole_types() -> str:
                         bbox=dict(boxstyle="round,pad=0.25", fc=SURF, ec=GRID),
                         arrowprops=dict(arrowstyle="-", color=INK2, lw=0.7))
         y = pr["U"][-1]
-        extra = "\n(reached only like 4/s)" if strat == "L1" else ""
-        ax.text(14.35, y, f"{name}\nU(1) = {d.U_lim:.3g}{extra}", fontsize=9, va="center", color=INK)
+        ax.text(14.35, y, f"{name}\nU(1) = {d.U_lim:.3g}".replace("-", "\u2212"), fontsize=9,
+                va="center", color=INK)
         ax.plot([14.05, 14.28], [y, y], color=col, lw=2.2, clip_on=False)
     ax.set_xlim(0, 14)
     ax.set_ylim(-2.6, -0.5)
@@ -82,7 +82,8 @@ def fig_pole_types() -> str:
     style = [Line2D([], [], color=INK2, lw=2.2, label="computed"),
              Line2D([], [], color=INK2, lw=1.1, ls=(0, (5, 3)), label="predicted limit U(1)"),
              Line2D([], [], color=INK2, lw=1.3, ls=":", label=r"L1 law $U \approx -2 + 4/s$")]
-    ax.legend(handles=style, loc="lower right", fontsize=8.5, frameon=True, facecolor=SURF, edgecolor=GRID)
+    ax.legend(handles=style, loc="center", bbox_to_anchor=(0.5, 0.3), fontsize=8.5, frameon=True,
+              facecolor=SURF, edgecolor=GRID)
     # ---------------------------------------------------------------- panel B: local exponent
     xi2 = np.linspace(np.log(2 / 0.03), 13.8, 700)        # d from 0.05 to 1e-6 (edge runs drift later)
     d_end = 1.0 / np.cosh(13.8)                              # = sin(theta) at the last sample
@@ -103,12 +104,13 @@ def fig_pole_types() -> str:
             how = r"from $1/(d^2\ln^2(1/d))$"
         else:
             pred = np.full_like(d, -4 * dfull.mu)
-            how = r"$-4\mu$ (derived here)"
+            how = r"$-4\mu$ (new, unproven)"
         bx.semilogx(d, pred, color=col, lw=1.2, ls=(0, (5, 3)), zorder=2)
         bx.semilogx(d, slope, color=col, lw=2.2, zorder=3)
         plateau = (d > 3e-6) & (d < 3e-5)
         y = float(np.median(slope[plateau]))
-        label_y[strat] = (y, f"{name.split(':')[0]}: exponent {y:.2f}\npredicted {np.median(pred[plateau]):.2f}, {how}", col)
+        txt = f"{name.split(':')[0]}: exponent {y:.2f}\npredicted {np.median(pred[plateau]):.2f}, "
+        label_y[strat] = (y, txt.replace("-", "\u2212") + how, col)
     # right-end labels, nudged apart vertically if they collide
     items = sorted(label_y.values(), key=lambda t: t[0])
     ys = [t[0] for t in items]
@@ -116,12 +118,12 @@ def fig_pole_types() -> str:
         ys[i] = max(ys[i], ys[i - 1] + 0.22)
     for (y0, txt, col), yt in zip(items, ys):
         bx.text(d_end * 0.62, yt, txt, fontsize=9, va="center", ha="left", color=INK)
-        bx.plot([d_end, d_end * 0.7], [y0, yt], color=col, lw=2.2, clip_on=False)
+        bx.plot([d_end * 0.85, d_end * 0.68], [yt, yt], color=col, lw=2.2, clip_on=False)
     bx.set_xlim(0.03, d_end)                                 # pole on the right, as in panel A
-    bx.set_ylim(-2.05, -0.5)
+    bx.set_ylim(-2.05, -0.6)
     bx.set_xlabel(r"$d = \sin\theta$, distance to the axis   (toward the axis $\rightarrow$)")
     bx.set_ylabel(r"local exponent $\;d\ln|u_r|\,/\,d\ln d$")
-    bx.set_title(r"B. The blow-up exponent of $u_r$ tends to the rate predicted by the pole type",
+    bx.set_title(r"B. The blow-up exponent of $u_r$ tends to the predicted rate   ($\mu = \sqrt{1+Q(1)/2}$)",
                  loc="left", fontsize=11, color=INK)
     style2 = [Line2D([], [], color=INK2, lw=2.2, label=r"computed  ($|u_r| \sim d^{\,\mathrm{exponent}}$)"),
               Line2D([], [], color=INK2, lw=1.2, ls=(0, (5, 3)), label="predicted exponent")]
@@ -210,8 +212,8 @@ def fig_lens_map() -> str:
             fontsize=9, color=INK, bbox=dict(boxstyle="round,pad=0.2", fc=SURF, ec="none"))
     ann = dict(fontsize=9.3, color=INK, bbox=dict(boxstyle="round,pad=0.25", fc=SURF, ec=GRID),
                arrowprops=dict(arrowstyle="-", color=INK, lw=0.8))
-    ax.annotate("lower edge $\\gamma_-(\\kappa)$:\nnorth pole is L1", xy=(float(np.interp(2.6, ks, gm)), 2.6), xytext=(-2.15, 3.3), **ann)
-    ax.annotate("upper edge $\\gamma_+(\\kappa)$:\ndecided by the south pole", xy=(float(-np.interp(0.9, ks, gm)), 0.9),
+    ax.annotate("left edge $\\gamma = \\gamma_-(\\kappa)$:\nnorth pole is L1", xy=(float(np.interp(2.6, ks, gm)), 2.6), xytext=(-2.15, 3.3), **ann)
+    ax.annotate("right edge $\\gamma = \\gamma_+(\\kappa)$:\ndecided by the south pole", xy=(float(-np.interp(0.9, ks, gm)), 0.9),
                 xytext=(0.75, 1.45), **ann)
     ax.set_xlim(-2.2, 2.2)
     ax.set_ylim(0, 4.4)
@@ -233,14 +235,21 @@ def fig_lens_map() -> str:
     _shade_lens(ax, xs2, ys2, masked_mu(res2, xs2, ys2), gm, ks, cols, smooth=1.5)
     ins = ax.inset_axes([0.83, 0.53, 0.155, 0.21])
     ins.grid(False)
-    _shade_lens(ins, xs2, ys2, masked_mu(res2, xs2, ys2), gm, ks, cols, smooth=1.5)
+    cs2 = _shade_lens(ins, xs2, ys2, masked_mu(res2, xs2, ys2), gm, ks, cols, smooth=1.5)
     ins.set_xlim(-2.02, -1.55)
     ins.set_ylim(0, 1.2)
     ins.tick_params(labelsize=8)
     ins.set_title("zoom of the dashed box", fontsize=8.5, color=INK, loc="left", pad=3)
+    for sp in ins.spines.values():
+        sp.set_visible(True)
+        sp.set_color(INK)
+    fig.canvas.draw()
+    from matplotlib.patches import ConnectionPatch
+    for (xa, ya), (xb, yb) in [((-1.55, 1.2), (0.0, 1.0)), ((-1.55, 0.0), (0.0, 0.0))]:
+        fig.add_artist(ConnectionPatch(xyA=(xa, ya), coordsA=ax.transData, xyB=(xb, yb),
+                                       coordsB=ins.transAxes, color=INK2, lw=0.8, ls="--"))
     from matplotlib.patches import Rectangle
     ax.add_patch(Rectangle((-2.02, 0.0), 0.47, 1.2, fill=False, ec=INK, lw=1.0, ls="--", zorder=7))
-    ax.text(-1.53, 1.22, "zoomed at right", fontsize=8.5, color=INK, va="bottom", path_effects=HALO)
     fig.text(0.01, 0.01, f"Data at the equator x = 0. Grid {spec.nx}×{spec.ny} (inset {spec2.nx}×{spec2.ny}); "
              "lens edges by bisection.", fontsize=8.5, color=INK2)
     fig.tight_layout(rect=(0, 0.03, 1, 1))
