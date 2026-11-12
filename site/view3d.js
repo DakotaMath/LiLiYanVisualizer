@@ -259,6 +259,33 @@ export class View3D {
       g.add(new THREE.Mesh(geo, new THREE.MeshPhongMaterial({ vertexColors: true, transparent: true, opacity: d.surface.opacity,
         side: THREE.DoubleSide, depthWrite: false, clippingPlanes: clip })));
     }
+    // the isosurface: one neutral colour, translucent (as the desktop)
+    if (d.iso) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(b64(d.iso.points, Float32Array), 3));
+      geo.setIndex(new THREE.BufferAttribute(b64(d.iso.triangles, Uint32Array), 1));
+      geo.computeVertexNormals();
+      g.add(new THREE.Mesh(geo, new THREE.MeshPhongMaterial({ color: "#9fb3c8", transparent: true, opacity: d.iso.opacity,
+        side: THREE.DoubleSide, depthWrite: false, clippingPlanes: clip })));
+    }
+    // arrow glyphs on a coarse grid: VTK's default arrow (shaft 0.65, tip 0.35 long) from the point
+    // along u, scaled by log(1 + |u|/median) × 0.22
+    if (d.glyphs && d.glyphs.n) {
+      const pts = b64(d.glyphs.points, Float32Array), vec = b64(d.glyphs.vecs, Float32Array);
+      const shaft = new THREE.CylinderGeometry(0.04, 0.04, 0.65, 12).translate(0, 0.325, 0);
+      const tip = new THREE.ConeGeometry(0.1, 0.35, 12).translate(0, 0.825, 0);
+      const mat = new THREE.MeshPhongMaterial({ color: P.text, clippingPlanes: clip, shininess: 30 });
+      const parts = [new THREE.InstancedMesh(shaft, mat, d.glyphs.n), new THREE.InstancedMesh(tip, mat, d.glyphs.n)];
+      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3();
+      for (let i = 0; i < d.glyphs.n; i++) {
+        v.set(vec[3 * i], vec[3 * i + 1], vec[3 * i + 2]);
+        const len = v.length() * 0.22;
+        q.setFromUnitVectors(up, v.normalize());
+        m.compose(new THREE.Vector3(pts[3 * i], pts[3 * i + 1], pts[3 * i + 2]), q, sc.set(len, len, len));
+        for (const p of parts) p.setMatrixAt(i, m);
+      }
+      for (const p of parts) g.add(p);
+    }
     if (d.vortex && d.vortex.n) {
       g.add(new THREE.Mesh(tubes(splitLines(d.vortex, false), 0.006, 8),
         new THREE.MeshPhongMaterial({ color: "#2e9d3a", clippingPlanes: clip })));
@@ -272,19 +299,11 @@ export class View3D {
         this.labels.push({ pos: [L.pts[3 * k], L.pts[3 * k + 1], L.pts[3 * k + 2]], text: names[i], plain: true, group: "scene" });
       });
     }
-    // origin ball and the swirl arcs
+    // origin ball
     const ball = new THREE.Mesh(new THREE.SphereGeometry(d.origin_r || 0.12, 24, 16),
                                 new THREE.MeshPhongMaterial({ color: "#8a8c92", emissive: "#2a2a2c" }));
     g.add(ball);
     this.labels.push({ pos: [-0.75, 0, -0.3], text: "origin (cut out)", plain: true, group: "scene" });
-    for (const a of d.arcs || []) {
-      const pts = b64(a.points, Float32Array), k = pts.length / 3;
-      g.add(new THREE.Mesh(tubes([{ pts, cols: null }], 0.012, 10), new THREE.MeshPhongMaterial({ color: "#e65100" })));
-      const tip = [pts[3 * k - 3], pts[3 * k - 2], pts[3 * k - 1]], prev = [pts[3 * k - 12], pts[3 * k - 11], pts[3 * k - 10]];
-      const dir = [tip[0] - prev[0], tip[1] - prev[1], tip[2] - prev[2]];
-      const n = Math.hypot(...dir);
-      g.add(coneAlong([tip[0] + 0.04 * dir[0] / n, tip[1] + 0.04 * dir[1] / n, tip[2] + 0.04 * dir[2] / n], dir, 0.11, 0.045, "#e65100", 20));
-    }
     this.drawColorbar(d);
     this.render();
   }

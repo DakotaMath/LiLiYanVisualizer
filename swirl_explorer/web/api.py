@@ -28,9 +28,9 @@ from ..core.sigma_map import SigmaMapSpec, SigmaMapResult, quick_pole  # noqa: E
 from ..core.paths import ParamPath, scan_path, failure_kind, _why  # noqa: E402
 from ..viz import style  # noqa: E402
 from ..viz.plots2d import QUANTITIES, XVARS, Curve, draw_profiles, PIN_COLORS  # noqa: E402
-from ..viz.scene3d_colors import COLOR_BY, VTK_TITLES, STRATUM_COLORS  # noqa: E402
+from ..viz.scene3d_colors import COLOR_BY, VTK_TITLES, STRATUM_COLORS, ISO_FIELDS  # noqa: E402
 from ..viz.scene_values import (scalar_values, colour_spec, outline_lines, axis_info, arrow_points,  # noqa: E402
-                                swirl_arc_points)
+                                glyph_vectors, iso_filled, iso_good_points)
 from ..viz.status_text import head_html, pole_line  # noqa: E402
 
 _S: dict = {"p": None, "sol": None, "sm": None, "pins": [], "sigma": None}
@@ -88,6 +88,7 @@ def info() -> dict:
         "modes": [{"key": "linear", "label": "linear"}, {"key": "log", "label": "log |·|"},
                   {"key": "loglog", "label": "log–log near pole"}],
         "color_by": [{"key": k, "label": v} for k, v in COLOR_BY.items()],
+        "iso_fields": [{"key": k, "label": v} for k, v in ISO_FIELDS.items()],
         "presets": [{"key": k, "label": lab, "tip": tip} for k, lab, tip in (
             ("rest", "Rest state", "c = 0, γ = A = κ = 0: U ≡ 0, no flow"),
             ("landau", "Landau jet…", "no swirl: U = 2(1−x²)/(λ_L + x), global iff |λ_L| ≥ 1"),
@@ -262,6 +263,9 @@ def scene(settings: dict) -> dict:
         vals.append(scalar_values(fi, surf[0], s.color_by))
     if s.show_vortex and num.vortex_traced is not None and num.vortex_traced.lines:
         vals.append(scalar_values(fi, np.vstack(num.vortex_traced.lines), s.color_by))
+    iso = _iso_mesh(s, fi, dom) if s.show_iso else None
+    if iso is not None:                        # the desktop includes it in the colour range too
+        vals.append(scalar_values(fi, iso[0], s.color_by))
     cs = colour_spec(np.concatenate(vals) if vals else np.array([]), s.color_by)
     overlays = bool((s.show_selfsim and num.selfsim) or (s.show_vortex and num.vortex_traced is not None))
     out: dict = {"color_by": s.color_by, "overlays": overlays, "clip": bool(s.clip)}
@@ -279,6 +283,13 @@ def scene(settings: dict) -> dict:
             out["surface"] = {"points": _b64(SP, np.float32), "triangles": _b64(tri, np.uint32),
                               "colors": _b64(_colours(scalar_values(fi, SP, s.color_by), cs), np.uint8),
                               "opacity": s.opacity}
+    if iso is not None:
+        out["iso"] = {"points": _b64(iso[0], np.float32), "triangles": _b64(iso[1], np.uint32),
+                      "opacity": s.opacity, "level": iso[2]}
+    if s.show_glyphs:
+        X, V = glyph_vectors(fi, dom)
+        if len(X):
+            out["glyphs"] = {"n": len(X), "points": _b64(X, np.float32), "vecs": _b64(V, np.float32)}
     if s.show_vortex and num.vortex_traced is not None:
         out["vortex"] = _lines_payload(num.vortex_traced.lines)
     if s.show_selfsim and num.selfsim:
@@ -286,7 +297,6 @@ def scene(settings: dict) -> dict:
     out["axis"] = axis_info(_S["sm"], dom, fi)
     out["outline"] = _lines_payload(outline_lines(dom))
     out["origin_r"] = dom.r_min
-    out["arcs"] = [{"points": _b64(a, np.float32), "n": len(a), "sense": sense} for a, sense in swirl_arc_points(fi)]
     # the colour bar
     cmap = matplotlib.colormaps[cs["cmap"]] if isinstance(cs["cmap"], str) else cs["cmap"]
     out["colorbar"] = {"title": VTK_TITLES[s.color_by], "clim": [float(c) for c in cs["clim"]],
@@ -296,14 +306,44 @@ def scene(settings: dict) -> dict:
     out["stops"] = {k: v for k, v in sorted(getattr(num.traced, "stop_reasons", {}).items())} if num.traced else {}
     from types import SimpleNamespace
     from ..viz.scene_values import legend_items
-    stand_in = SimpleNamespace(n_lines=len(traced), surface=surf, iso=None, iso_level=float("nan"),
-                               vortex=num.vortex_traced if s.show_vortex else None, glyphs=None,
-                               selfsim=num.selfsim if s.show_selfsim else [], swirl_arcs=out["arcs"])
+    stand_in = SimpleNamespace(n_lines=len(traced), surface=surf, iso=iso,
+                               iso_level=iso[2] if iso is not None else float("nan"),
+                               vortex=num.vortex_traced if s.show_vortex else None,
+                               glyphs=out.get("glyphs"),
+                               selfsim=num.selfsim if s.show_selfsim else [], swirl_arcs=[])
     out["legend"] = legend_items(stand_in, s, cs, overlays, show_handle=False,
                                  slice_shown=bool(settings.get("_slice_shown")))
     out["coloured"] = bool((s.show_streamlines and not overlays) or surf is not None)
     out["ms"] = 1e3 * (time.perf_counter() - t0)
     return out
+
+
+def _iso_mesh(s, fi, dom):
+    """The isosurface as in the desktop's build_scene (VTK contour + clean_isosurface), with
+    scikit-image's marching cubes on the same 56³ grid: (points, triangles, level) or None."""
+    from ..viz.scene_compute import iso_grid, iso_level
+    key = (s.iso_field, s.domain_shape, s.r_min, s.axis_a)
+    if _S.get("iso_key") != key or _S.get("iso_of") is not _S["sol"]:
+        _S["iso_grid"], _S["iso_key"], _S["iso_of"] = iso_grid(fi, dom, s.iso_field), key, _S["sol"]
+    ax, vals = _S["iso_grid"]
+    level = iso_level(vals, s.iso_field, s.iso_quantile)
+    if not math.isfinite(level):
+        return None
+    from skimage.measure import marching_cubes
+    n, h = len(ax), float(ax[1] - ax[0])
+    vol = iso_filled(vals, level).reshape(n, n, n)          # 'ij' order: axis 0 is x
+    try:
+        P, T, _, _ = marching_cubes(vol, level, spacing=(h, h, h), allow_degenerate=False)
+    except (ValueError, RuntimeError):
+        return None
+    P = P + ax[0]
+    T = T[iso_good_points(P, dom, h)[T].all(axis=1)]          # cells with every point kept, as threshold()
+    if not len(T):
+        return None
+    used = np.unique(T)
+    remap = np.full(len(P), -1, np.int64)
+    remap[used] = np.arange(len(used))
+    return P[used], remap[T], level
 
 
 # ----------------------------------------------------------------------------- slice

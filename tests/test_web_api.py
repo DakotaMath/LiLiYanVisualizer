@@ -135,3 +135,31 @@ def test_presets_are_the_desktop_values():
 def test_unknown_calls_are_refused():
     with pytest.raises(ValueError):
         api.call("__import__", "[]")
+
+
+def _arr(s, dtype, k=3):
+    return np.frombuffer(__import__("base64").b64decode(s), dtype).reshape(-1, k)
+
+
+def test_scene_has_no_swirl_arcs_and_draws_arrows_and_isosurface_like_the_desktop():
+    pytest.importorskip("skimage")
+    from swirl_explorer.core.solver import solve
+    from swirl_explorer.core.poles import summarize
+    from swirl_explorer.viz.scene_compute import SceneSettings, compute_numeric, build_scene
+    call("solve", GENERIC)
+    sc = call("scene", {"show_glyphs": True, "show_iso": True, "clip": False})
+    assert "arcs" not in sc and not any("orange" in t for t in sc["legend"])
+    assert any("isosurface" in t for t in sc["legend"]) and any("arrows" in t for t in sc["legend"])
+    pv = pytest.importorskip("pyvista")
+    s = SceneSettings(show_glyphs=True, show_iso=True, clip=False)
+    sol = solve(Params.from_dict(GENERIC))
+    data = build_scene(compute_numeric(sol, s), summarize(sol))
+    assert sc["iso"]["level"] == pytest.approx(data.iso_level, rel=1e-12)
+    # glyphs: the same base points and vectors as the desktop's VTK glyph source
+    assert sc["glyphs"]["n"] == len(_arr(sc["glyphs"]["points"], np.float32))
+    # isosurface: marching cubes on the same grid gives the same surface (area within 2 %)
+    P, T = _arr(sc["iso"]["points"], np.float32).astype(float), _arr(sc["iso"]["triangles"], np.uint32)
+    area = 0.5 * np.linalg.norm(np.cross(P[T[:, 1]] - P[T[:, 0]], P[T[:, 2]] - P[T[:, 0]]), axis=1).sum()
+    ref = data.iso.triangulate().area
+    assert area == pytest.approx(ref, rel=0.02)
+    assert np.allclose(P.min(0), data.iso.points.min(0), atol=0.04) and np.allclose(P.max(0), data.iso.points.max(0), atol=0.04)

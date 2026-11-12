@@ -111,6 +111,37 @@ def arrow_points(lines: list[np.ndarray], spacing: float = 0.6) -> tuple[np.ndar
     return (np.array(P).reshape(-1, 3), np.array(D).reshape(-1, 3))
 
 
+def glyph_vectors(fi: FieldInterpolator, domain: Domain, n: int = 6) -> tuple[np.ndarray, np.ndarray]:
+    """Arrow positions and vectors on a coarse n³ grid: unit direction of u times log(1 + |u|/median)."""
+    ax = np.linspace(-domain.R, domain.R, n)
+    X = np.array(np.meshgrid(ax, ax, ax, indexing="ij")).reshape(3, -1).T
+    X = X[domain.inside(X)]
+    if len(X) == 0:
+        return np.zeros((0, 3)), np.zeros((0, 3))
+    U = fi.velocity(X)
+    ok = np.isfinite(U).all(axis=1)
+    X, U = X[ok], U[ok]
+    sp = np.linalg.norm(U, axis=1)
+    med = np.median(sp) if len(sp) else 1.0
+    length = np.log1p(sp / med)
+    return X, U / sp[:, None] * length[:, None]
+
+
+def iso_filled(v: np.ndarray, level: float) -> np.ndarray:
+    """Grid values with the undefined points (outside the region) set to a value on the far side of
+    the level, so the isosurface does not close along the cut-outs."""
+    fill = np.nanmin(v) - 1.0 if level > np.nanmedian(v) else np.nanmax(v) + 1.0
+    return np.where(np.isfinite(v), v, fill)
+
+
+def iso_good_points(P: np.ndarray, domain: Domain, spacing: float) -> np.ndarray:
+    """Isosurface points away from the excluded ball/cylinder and the outer boundary."""
+    r = np.linalg.norm(P, axis=1)
+    rho = np.hypot(P[:, 0], P[:, 1])
+    outer = r if domain.shape == "ball" else np.max(np.abs(P), axis=1)
+    return (r > domain.r_min + 1.5 * spacing) & (rho > domain.axis_a + 1.5 * spacing) &         (outer < domain.R - 1.0 * spacing)
+
+
 def swirl_arc_points(fi: FieldInterpolator) -> list[tuple[np.ndarray, str]]:
     """Arcs around the axis at z = ±0.55 in the sense of rotation (sign of u_φ); the arrow is at the end."""
     out = []

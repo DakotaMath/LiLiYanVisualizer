@@ -103,6 +103,26 @@ class NumericScene:
     timings: dict = field(default_factory=dict)
 
 
+def iso_grid(fi: FieldInterpolator, dom: Domain, field: str, n: int = 56) -> tuple[np.ndarray, np.ndarray]:
+    """The isosurface field sampled on an n³ grid ('ij' order), NaN outside the region."""
+    ax = np.linspace(-dom.R, dom.R, n)
+    P = np.array(np.meshgrid(ax, ax, ax, indexing="ij")).reshape(3, -1).T
+    ok = dom.inside(P)
+    vals = np.full(len(P), np.nan)
+    vals[ok] = fi.scalar(P[ok], field)
+    return ax, vals
+
+
+def iso_level(vals: np.ndarray, field: str, quantile: float) -> float:
+    """The isosurface level as a quantile of the sampled values (of log |u| for the speed)."""
+    v = vals[np.isfinite(vals)]
+    if not v.size:
+        return float("nan")
+    if field == "speed":
+        return float(np.exp(np.quantile(np.log(v[v > 0]), quantile)))
+    return float(np.quantile(v, quantile))
+
+
 def compute_numeric(sol: Solution, s: SceneSettings, fi: FieldInterpolator | None = None) -> NumericScene:
     """Worker-thread part: interpolation tables, seeds, line tracing, grid sampling (NumPy only).
     ``fi`` may be passed in to reuse the interpolation tables of the same solution."""
@@ -127,19 +147,8 @@ def compute_numeric(sol: Solution, s: SceneSettings, fi: FieldInterpolator | Non
         tm["vortex"] = time.perf_counter() - t
     if s.show_iso:
         t = time.perf_counter()
-        n = 56
-        ax = np.linspace(-dom.R, dom.R, n)
-        P = np.array(np.meshgrid(ax, ax, ax, indexing="ij")).reshape(3, -1).T
-        ok = dom.inside(P)
-        vals = np.full(len(P), np.nan)
-        vals[ok] = fi.scalar(P[ok], s.iso_field)
-        num.grid_axis, num.grid_values = ax, vals
-        v = vals[np.isfinite(vals)]
-        if v.size:
-            if s.iso_field == "speed":
-                num.iso_level = float(np.exp(np.quantile(np.log(v[v > 0]), s.iso_quantile)))
-            else:
-                num.iso_level = float(np.quantile(v, s.iso_quantile))
+        num.grid_axis, num.grid_values = iso_grid(fi, dom, s.iso_field)
+        num.iso_level = iso_level(num.grid_values, s.iso_field, s.iso_quantile)
         tm["iso"] = time.perf_counter() - t
     if s.show_selfsim:
         one = trace(fi.velocity, np.asarray(s.sphere_center, float)[None, :],

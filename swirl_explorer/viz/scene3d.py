@@ -21,7 +21,8 @@ from .slices import ROUNDOFF
 
 from .scene3d_colors import STRATUM_COLORS, COLOR_BY, VTK_TITLES  # noqa: F401  (re-exported)
 from .scene_values import (DIVERGING, SEQUENTIAL, _truncated, scalar_values, colour_spec,  # noqa: F401
-                           outline_lines, axis_info, arrow_points, swirl_arc_points)
+                           outline_lines, axis_info, arrow_points, swirl_arc_points,
+                           glyph_vectors, iso_filled, iso_good_points)
 
 
 # ----------------------------------------------------------------- context geometry
@@ -119,10 +120,8 @@ def sample_grid(fi: FieldInterpolator, domain: Domain, n: int = 64) -> pv.ImageD
 
 def isosurface(grid: pv.ImageData, field: str, level: float) -> Optional[pv.PolyData]:
     """Isosurface of ``field`` = level, cut away where the field is undefined."""
-    v = np.array(grid[field])
-    fill = np.nanmin(v) - 1.0 if level > np.nanmedian(v) else np.nanmax(v) + 1.0
     g = grid.copy()
-    g[field] = np.where(np.isfinite(v), v, fill)
+    g[field] = iso_filled(np.array(grid[field]), level)
     g.set_active_scalars(field)
     try:
         surf = g.contour([level], scalars=field)
@@ -135,13 +134,7 @@ def clean_isosurface(surf: pv.PolyData, domain: Domain, spacing: float) -> Optio
     """Drop the parts of an isosurface that hug the excluded ball/cylinder or the outer boundary."""
     if surf is None or surf.n_points == 0:
         return None
-    P = surf.points
-    r = np.linalg.norm(P, axis=1)
-    rho = np.hypot(P[:, 0], P[:, 1])
-    outer = r if domain.shape == "ball" else np.max(np.abs(P), axis=1)
-    good = (r > domain.r_min + 1.5 * spacing) & (rho > domain.axis_a + 1.5 * spacing) & \
-           (outer < domain.R - 1.0 * spacing)
-    surf["good"] = good.astype(float)
+    surf["good"] = iso_good_points(surf.points, domain, spacing).astype(float)
     out = surf.threshold(0.5, scalars="good", preference="point", all_scalars=True)
     out = out.extract_surface(algorithm="dataset_surface") if out.n_points else None
     return out if out is not None and out.n_points else None
@@ -149,19 +142,9 @@ def clean_isosurface(surf: pv.PolyData, domain: Domain, spacing: float) -> Optio
 
 def glyphs(fi: FieldInterpolator, domain: Domain, n: int = 6, scale: float = 0.22) -> Optional[pv.PolyData]:
     """Arrow glyphs on a coarse grid; arrow length ∝ log(1 + |u|/median)."""
-    ax = np.linspace(-domain.R, domain.R, n)
-    X = np.array(np.meshgrid(ax, ax, ax, indexing="ij")).reshape(3, -1).T
-    X = X[domain.inside(X)]
+    X, V = glyph_vectors(fi, domain, n)
     if len(X) == 0:
         return None
-    U = fi.velocity(X)
-    ok = np.isfinite(U).all(axis=1)
-    X, U = X[ok], U[ok]
-    sp = np.linalg.norm(U, axis=1)
-    med = np.median(sp) if len(sp) else 1.0
-    length = np.log1p(sp / med)
-    dirs = U / sp[:, None]
     pd = pv.PolyData(X)
-    pd["vec"] = dirs * length[:, None]
-    pd["speed"] = sp
+    pd["vec"] = V
     return pd.glyph(orient="vec", scale="vec", factor=scale, geom=pv.Arrow(tip_length=0.35, shaft_radius=0.04))
