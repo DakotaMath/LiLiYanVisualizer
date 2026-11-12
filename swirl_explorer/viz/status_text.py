@@ -41,7 +41,7 @@ def pole_line(name: str, d: PoleDiagnostics, sign: int) -> tuple[str, str]:
     if d.stratum == "blowup":
         return f"<b>{name}</b> &nbsp;<span style='color:{_col('bad')}'>not reached (blow-up first)</span>", d.note
     if d.stratum == "unsafe":
-        return (f"<b>{name}</b> &nbsp;<span style='color:{_col('bad')}'>no admissible pole limit</span>",
+        return (f"<b>{name}</b> &nbsp;<span style='color:{_col('bad')}'>fails the terminal test (no admissible pole limit)</span>",
                 "the solution would blow up beyond the computed window (book's terminal test)")
     U = d.U_lim if sign > 0 else -d.U_lim
     pole = "U(1)" if sign > 0 else "U(−1)"
@@ -80,7 +80,8 @@ def head_html(sm: Summary) -> str:
         what = "U → −∞" if sm.north.stratum == "blowup" else "U → +∞"
         where = f" &nbsp; blow-up: {what} at x = {sm.blowup_x:+.6f}".replace("-", "−")
     else:
-        where = " &nbsp; a pole has no admissible limit"
+        side = "north" if sm.north.stratum == "unsafe" else "south"
+        where = f" &nbsp; the {side} pole fails the terminal test"
     return f"<span style='color:{_col('bad')};font-size:16px'><b>● NOT GLOBAL</b></span>{where}"
 
 

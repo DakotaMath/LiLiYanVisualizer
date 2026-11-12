@@ -42,11 +42,11 @@
       <h3>Presets</h3>
       <div id="presets" class="preset-grid"></div>
     </section>
-    <p class="notation"><b>Notation.</b> x = cos θ; the poles x = ±1 are the symmetry axis, d = sin θ is the distance
+    <details id="notation" class="notation" open><summary><b>Notation</b></summary> x = cos θ; the poles x = ±1 are the symmetry axis, d = sin θ is the distance
       to it. c<sub>1</sub>, c<sub>2</sub>, c<sub>3</sub>: Taylor constants of the potential Q at the base point,
       Q ≈ c<sub>1</sub>(1−x) + c<sub>2</sub>(1+x) + c<sub>3</sub>(1−x<sup>2</sup>). γ = U, A = f, κ = f<sub>x</sub>
       at the base point, where U = u<sub>θ</sub> sin θ and f = u<sub>φ</sub> sin θ. z solves z′′ = W z with
-      W = 1 + Q/2, and h = z′/z.</p>
+      W = 1 + Q/2, and h = z′/z.</details>
     <section class="group status">
       <h3>Current solution</h3>
       <div id="st-head">—</div>
@@ -198,7 +198,7 @@
           <label>from / to <span class="pair"><input id="sg-x0" type="number" step="0.1"><input id="sg-x1" type="number" step="0.1"></span></label>
           <label>vertical <select id="sg-y"></select></label>
           <label>from / to <span class="pair"><input id="sg-y0" type="number" step="0.1"><input id="sg-y1" type="number" step="0.1"></span></label>
-          <label title="points per axis; the browser shares the work between several background workers">grid <input id="sg-n" type="number" min="11" max="201" step="10" value="61"></label>
+          <label title="points per axis; the browser shares the work between several background workers">grid <input id="sg-n" type="number" min="11" max="401" step="10" value="101"></label>
         </div>
         <p id="sg-fixed" class="muted small"></p>
       </section>
@@ -247,7 +247,9 @@
           <input id="pa-fps" type="number" min="1" max="60" value="24" title="frames per second"> fps
           <span id="pa-len" class="muted"></span>
           <span class="spacer"></span>
-          <button id="pa-video" title="record the 3D view along the path as a video file">Record video…</button>
+          <label title="what a recorded video shows where the solution is not global">not-global frames in the video:
+            <select id="pa-policy"><option value="hold">hold the last global frame</option><option value="skip">leave out</option><option value="mark">show, labelled</option></select></label>
+          <button id="pa-video" title="record the 3D view along the path as a video file (MP4 or WebM)">Record video…</button>
         </div>
         <canvas id="pa-timeline" height="80"></canvas>
         <div id="pa-frame" class="small"></div>
@@ -280,7 +282,7 @@
     4–5 times slower than the desktop app, and the Σ-map is shared between several background workers.</p>
   <p>Differences from the desktop app: no draggable seed or plane handles (type the values), no arrow glyphs or
     isosurfaces in 3D, video recording (WebM/MP4 of the 3D view with the caption strip) instead of the composited
-    MP4 export, and a 61 × 61 default Σ-map grid (the desktop uses 101 × 101).</p>
+    MP4 export.</p>
   <p>Keyboard: Ctrl+O opens a session, Ctrl+S saves one.</p>
   <form method="dialog"><button>Close</button></form>
 </dialog>

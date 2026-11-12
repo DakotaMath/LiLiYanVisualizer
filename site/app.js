@@ -46,7 +46,7 @@ const S = {
   plane: { azimuth: -90, elevation: 0, offset: 0, half_size: 1.0 },
   sliceOpts: { un: true, rho: false, log: false, lines: true, lic: false, density: 1.4, follow: false },
   plots: { xvar: "xi", mode: "linear", pole: "north", quantities: ["U", "f", "Q"], overlay: true },
-  sigma: { x_name: "gamma", y_name: "kappa", x_range: [-2.6, 2.6], y_range: [-4.6, 4.6], n: 61, mode: "global",
+  sigma: { x_name: "gamma", y_name: "kappa", x_range: [-2.6, 2.6], y_range: [-4.6, 4.6], n: 101, mode: "global",
            edge: true, mu: false, computed: null, running: false, axes: [] },
   tab: "view3d", rtab: "ctl3d", solved: null,
 };
@@ -207,8 +207,7 @@ async function refreshScene(g = solveGen) {
 }
 
 function renderLegend(r) {
-  const items = r.legend || [], half = Math.ceil(items.length / 2);
-  $("legend3d").innerHTML = `<table><tr><td>${items.slice(0, half).join("<br>")}</td><td>${items.slice(half).join("<br>")}</td></tr></table>`;
+  $("legend3d").innerHTML = (r.legend || []).map((t) => `<div>${t}</div>`).join("");
   $("s-color_by").disabled = !r.coloured;
   $("s-color_by").title = r.coloured ? "" : "nothing on screen is colour-mapped right now (streamlines are dimmed while overlays are shown)";
 }
@@ -451,6 +450,7 @@ function showSlice(on) {
 
 function showPath(on) {
   $("bottom").hidden = !on;
+  $("notation").open = !on;
   $("btn-path").classList.toggle("on", on);
   view.resize();
 }
@@ -538,7 +538,7 @@ function bindSigmaControls() {
   for (const [id, k, i] of [["sg-x0", "x_range", 0], ["sg-x1", "x_range", 1], ["sg-y0", "y_range", 0], ["sg-y1", "y_range", 1]]) {
     $(id).addEventListener("change", () => { const v = parseFloat($(id).value); if (isFinite(v)) S.sigma[k][i] = v; });
   }
-  $("sg-n").addEventListener("change", () => { S.sigma.n = Math.max(11, Math.min(201, parseInt($("sg-n").value) || 61)); sync(); });
+  $("sg-n").addEventListener("change", () => { S.sigma.n = Math.max(11, Math.min(401, parseInt($("sg-n").value) || 101)); sync(); });
   $("sg-mode").addEventListener("change", () => { S.sigma.mode = $("sg-mode").value; refreshSigma(); });
   $("sg-edge").addEventListener("change", () => { S.sigma.edge = $("sg-edge").checked; refreshSigma(); });
   $("sg-mu").addEventListener("change", () => { S.sigma.mu = $("sg-mu").checked; refreshSigma(); });
@@ -625,7 +625,7 @@ async function applySession(text) {
   if (sec.plots) { Object.assign(S.plots, sec.plots); syncPlots(); }
   if (sec.sigma) {
     Object.assign(S.sigma, { x_name: sec.sigma.x_name, y_name: sec.sigma.y_name, x_range: sec.sigma.x_range,
-      y_range: sec.sigma.y_range, n: Math.min(sec.sigma.grid || 61, 201), mode: sec.sigma.mode, edge: sec.sigma.edge, mu: sec.sigma.mu });
+      y_range: sec.sigma.y_range, n: Math.min(sec.sigma.grid || 101, 401), mode: sec.sigma.mode, edge: sec.sigma.edge, mu: sec.sigma.mu });
     S.sigma.spec = null; syncSigma();
   }
   path.setPath(s.path, sec.movie || {});
@@ -651,12 +651,12 @@ function setTheme(t) {
   document.documentElement.dataset.theme = t;
   $("btn-theme").textContent = t === "dark" ? "Light theme" : "Dark theme";
   if (!py) return;
-  py.call("set_theme", t).then(() => { view.setTheme(t); refreshViews(); if (S.sliceShown) refreshSlice(); });
+  py.call("set_theme", t).then(() => { view.setTheme(t); requestSolve(); if (path) { path.drawTimeline(); path.updateEvents(); } });
 }
 
 // ============================================================================ start
 window.__errors = [];
-window.addEventListener("error", (e) => window.__errors.push(String(e.message)));
+window.addEventListener("error", (e) => { if (!/ResizeObserver loop/.test(e.message)) window.__errors.push(String(e.message)); });
 window.addEventListener("unhandledrejection", (e) => window.__errors.push(String(e.reason)));
 
 async function main() {

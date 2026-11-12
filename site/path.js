@@ -56,7 +56,7 @@ export class PathDock {
     this.frames = []; this.events = []; this.index = 0; this.sel = -1; this.scanGen = 0;
     const $ = this.$;
     this.table = $("pa-table"); this.canvas = $("pa-timeline");
-    this.table.querySelector("thead").innerHTML = `<tr><th title="the path parameter at this keyframe (not physical time: the solutions are stationary)">path t</th>${NAMES.map((n) => `<th id="pa-h-${n}">${SHORT[n]}</th>`).join("")}<th title="the view this keyframe restores (camera, slice plane, seeds), chosen by the boxes above">restores view</th></tr>`;
+    this.table.querySelector("thead").innerHTML = `<tr><th>#</th><th title="the path parameter at this keyframe (not physical time: the solutions are stationary)">path t</th>${NAMES.map((n) => `<th id="pa-h-${n}">${SHORT[n]}</th>`).join("")}<th title="the view this keyframe restores (camera, slice plane, seeds), chosen by the boxes above">restores view</th></tr>`;
     $("pa-add").onclick = () => this.addKeyframe(this.getParams());
     $("pa-set").onclick = () => {
       if (this.sel < 0) return;
@@ -69,6 +69,7 @@ export class PathDock {
     $("pa-interp").onchange = () => { this.path.interpolation = $("pa-interp").value; this.changed(); };
     $("pa-frames").onchange = () => this.changed();
     $("pa-fps").onchange = () => this.updateLength();
+    $("pa-policy").onchange = () => this.updateEvents();
     $("pa-first").onclick = () => this.goto(0);
     $("pa-last").onclick = () => this.goto(this.n() - 1);
     $("pa-play").onclick = () => this.play(!this.playing);
@@ -128,7 +129,7 @@ export class PathDock {
     const $ = this.$, ks = this.path.keyframes, vary = this.varying();
     for (const n of NAMES) $(`pa-h-${n}`).textContent = SHORT[n] + (vary.includes(n) ? " (varies)" : "");
     const tb = this.table.querySelector("tbody");
-    tb.innerHTML = ks.map((k, r) => `<tr data-r="${r}" class="${r === this.sel ? "sel" : ""}"><td contenteditable data-c="t">${+k.t.toPrecision(10)}</td>` +
+    tb.innerHTML = ks.map((k, r) => `<tr data-r="${r}" class="${r === this.sel ? "sel" : ""}"><td class="const">${r + 1}</td><td contenteditable data-c="t">${+k.t.toPrecision(10)}</td>` +
       NAMES.map((n) => `<td contenteditable data-c="${n}" class="${vary.includes(n) ? "" : "const"}" ${vary.includes(n) ? 'style="font-weight:600"' : ""}>${+Number(k.params[n]).toPrecision(10)}</td>`).join("") +
       `<td class="const">${EXTRA.filter((e) => k.extras && e in k.extras).join(", ") || "—"}</td></tr>`).join("");
     tb.querySelectorAll("tr").forEach((tr) => tr.addEventListener("click", () => {
@@ -186,7 +187,7 @@ export class PathDock {
     if (this.events.length) head += `<span style="color:${COL.event}">▼</span> event &nbsp; `;
     head += `<span style="color:${COL.event}">●</span> keyframe (numbers as on the Σ-map)<br>`;
     const summary = bad === 0 ? `<b style="color:${COL.ok}">All ${n} frames are global.</b>`
-      : `<b style="color:${COL.bad}">${bad} of ${n} frames are not global.</b> A recorded video holds the last global frame there; the preview shows them as they are.`;
+      : `<b style="color:${COL.bad}">${bad} of ${n} frames are not global.</b> ${{ hold: "A recorded video holds the last global frame there (labelled HELD)", skip: "A recorded video leaves them out", mark: "A recorded video shows them, labelled NOT GLOBAL" }[this.$("pa-policy").value]}; the preview shows them as they are.`;
     const names = { leaves_global: "leaves the global set", enters_global: "comes back into the global set",
                     stratum_change: "a pole changes type", failure_change: "still not global, now" };
     const lines = this.events.slice(0, 12).map((e) => {
@@ -352,22 +353,25 @@ export class PathDock {
     rec.start();
     rec.pause();
     const frameMs = 1000 / fps;
-    let last = null, held = 0;
+    let last = null, held = 0, skipped = 0;
+    const policy = this.$("pa-policy").value;
     for (let i = 0; i < n && !stop; i++) {
       await this.goto(i);
       await this.waitIdle();
       const f = this.frames[i];
       const ok = !f || f.global;
-      if (ok || !last) {
+      if (!ok && policy === "skip") { skipped++; continue; }
+      if (ok || !last || policy === "mark") {
         view.renderNow();
         g.fillStyle = "#101114"; g.fillRect(0, 0, W, H);
         g.drawImage(src, 0, 0);
         if (ok) last = g.getImageData(0, 0, W, src.height);
+        if (!ok) { g.fillStyle = "rgba(0,0,0,0.35)"; g.fillRect(0, 0, W, src.height); }
       } else {
         g.putImageData(last, 0, 0); held++;
         g.fillStyle = "rgba(0,0,0,0.5)"; g.fillRect(0, 0, W, src.height);
       }
-      this.caption(g, W, H, cap, i, f, !ok ? (last ? "HELD · last global frame" : "NOT GLOBAL") : "");
+      this.caption(g, W, H, cap, i, f, !ok ? (policy === "hold" && last ? "HELD · last global frame" : "NOT GLOBAL") : "");
       rec.resume();                                   // the frame is on the timeline for exactly 1/fps
       track.requestFrame();
       await new Promise((r) => setTimeout(r, frameMs));
@@ -381,7 +385,7 @@ export class PathDock {
     const url = URL.createObjectURL(new Blob(chunks, { type: mime.split(";")[0] }));
     const a = document.createElement("a"); a.href = url; a.download = `swirl_path.${ext}`; a.click();
     this.recording = false; btn.textContent = "Record video…"; btn.onclick = () => this.record();
-    this.$("sb-info").textContent = `recorded ${n} frames (${(n / fps).toFixed(1)} s) as ${ext.toUpperCase()}` + (held ? ` — ${held} not-global frames held at the last global frame` : "");
+    this.$("sb-info").textContent = `recorded ${n} frames (${(n / fps).toFixed(1)} s) as ${ext.toUpperCase()}` + (held ? ` — ${held} not-global frames held at the last global frame` : "") + (skipped ? ` — ${skipped} not-global frames left out` : "");
   }
 
   waitIdle() {

@@ -102,7 +102,7 @@ def test_compute_scene_variants(sol, kw):
 def test_scene_for_nonglobal_solution():
     s = solve(Params(gamma=-1.9, kappa=1.0))       # blows up near the north pole
     data = compute_scene(s, summarize(s), SceneSettings(show_iso=True))
-    assert "not reached" in data.axis[0][2]
+    assert "not reached" in data.axis[0][2] or "fails the terminal test" in data.axis[0][2]
     assert data.n_lines > 0
 
 

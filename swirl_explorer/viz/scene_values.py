@@ -75,8 +75,10 @@ def axis_info(summary: Summary, domain: Domain, fi: Optional[FieldInterpolator] 
     for sign, diag, name in ((+1, summary.north, "N"), (-1, summary.south, "S")):
         col = STRATUM_COLORS.get(diag.stratum, "#8a8986")
         up = 0
-        if diag.stratum in ("blowup", "unsafe"):
-            lab = f"{name}: not reached"
+        if diag.stratum == "blowup":
+            lab = f"{name}: not reached (blow-up first)"
+        elif diag.stratum == "unsafe":
+            lab = f"{name}: fails the terminal test"
         else:
             lab = f"{name}: {diag.stratum}, μ={diag.mu:.3g}"
             if fi is not None:
