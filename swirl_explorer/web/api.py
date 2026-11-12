@@ -463,6 +463,22 @@ def sigma_draw(opts: dict) -> dict:
     return {"png": png, "axes": boxes, "stats": stats}
 
 
+def sigma_extent() -> dict | None:
+    """Bounding box of the global points of the current map, and which map edges they touch
+    (a touched edge means the region may go on past it).  None if no point is global."""
+    res = _S["sigma"]
+    if res is None:
+        return None
+    g = res.is_global
+    if not g.any():
+        return None
+    xs, ys = res.spec.axes()
+    cols, rows = np.where(g.any(axis=0))[0], np.where(g.any(axis=1))[0]
+    return {"x": [float(xs[cols[0]]), float(xs[cols[-1]])], "y": [float(ys[rows[0]]), float(ys[rows[-1]])],
+            "left": bool(g[:, 0].any()), "right": bool(g[:, -1].any()),
+            "bottom": bool(g[0].any()), "top": bool(g[-1].any())}
+
+
 def sigma_point(x: float, y: float) -> dict:
     from ..viz.sigma_plot import readout
     res = _S["sigma"]
@@ -527,7 +543,7 @@ def session_load(text: str) -> dict:
 
 # ----------------------------------------------------------------------------- dispatcher
 _PUBLIC = ("info", "preset", "set_theme", "lock", "is_global", "solve", "pin", "clear_pins", "profiles", "scene",
-           "slice_view", "sigma_rows", "sigma_start", "sigma_add", "sigma_keep", "sigma_recall", "sigma_draw", "sigma_point", "path_scan",
+           "slice_view", "sigma_rows", "sigma_start", "sigma_add", "sigma_keep", "sigma_recall", "sigma_draw", "sigma_extent", "sigma_point", "path_scan",
            "path_at", "session_json", "session_load")
 
 
