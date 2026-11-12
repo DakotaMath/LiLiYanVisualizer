@@ -138,12 +138,14 @@ class SlicePanel(QWidget):
         self.az = self._slider(-180, 180, "azimuth of the normal (degrees, from +x toward +y)")
         self.el = self._slider(-90, 90, "elevation of the normal above the equator (degrees)")
         self.off = self._slider(-95, 95, "offset of the plane from the origin along its normal (×0.01)")
-        self.az_lab, self.el_lab, self.off_lab = QLabel(), QLabel(), QLabel()
-        for r, (name, s, lab) in enumerate((("azimuth", self.az, self.az_lab), ("elevation", self.el, self.el_lab),
-                                            ("offset", self.off, self.off_lab))):
+        self.az_spin = self._spin(-180, 180, 2, 1.0, "°")
+        self.el_spin = self._spin(-90, 90, 2, 1.0, "°")
+        self.off_spin = self._spin(-0.95, 0.95, 3, 0.01, "")
+        for r, (name, s, sp) in enumerate((("azimuth", self.az, self.az_spin), ("elevation", self.el, self.el_spin),
+                                           ("offset", self.off, self.off_spin))):
             grid.addWidget(QLabel(name), r, 0)
             grid.addWidget(s, r, 1)
-            grid.addWidget(lab, r, 2)
+            grid.addWidget(sp, r, 2)
         gv.addLayout(grid)
         self.normal_lab = QLabel("")
         self.normal_lab.setWordWrap(True)
@@ -211,19 +213,31 @@ class SlicePanel(QWidget):
         s.valueChanged.connect(self._sliders_moved)
         return s
 
+    def _spin(self, lo, hi, decimals, step, suffix) -> QDoubleSpinBox:
+        s = QDoubleSpinBox()
+        s.setRange(lo, hi)
+        s.setDecimals(decimals)
+        s.setSingleStep(step)
+        s.setSuffix(suffix)
+        s.setKeyboardTracking(False)          # apply on Enter / focus-out, not on every keystroke
+        s.setMinimumWidth(78)
+        s.valueChanged.connect(self._spins_changed)
+        return s
+
     # ---------------------------------------------------------------- state sync
     def _load_spec(self, spec: PlaneSpec):
+        """Show `spec` in the sliders and the typed fields without emitting anything."""
         self._block = True
         self.az.setValue(int(round(spec.azimuth)))
         self.el.setValue(int(round(spec.elevation)))
         self.off.setValue(int(round(spec.offset * 100)))
+        self.az_spin.setValue(spec.azimuth)
+        self.el_spin.setValue(spec.elevation)
+        self.off_spin.setValue(spec.offset)
         self._block = False
         self._update_labels(spec)
 
     def _update_labels(self, spec: PlaneSpec):
-        self.az_lab.setText(f"{spec.azimuth:.0f}°")
-        self.el_lab.setText(f"{spec.elevation:.0f}°")
-        self.off_lab.setText(f"{spec.offset:+.2f}".replace("-", "−"))
         e1, e2, n = spec.basis()
         self.normal_lab.setText(f"normal n = {_fmt_vec(n)} points toward you<br>"
                                 f"right = {_fmt_vec(e1)}, up = {_fmt_vec(e2)}")
@@ -231,15 +245,24 @@ class SlicePanel(QWidget):
     def _preset(self, az, el):
         spec = PlaneSpec(azimuth=az, elevation=el, offset=0.0, half_size=self.ctrl.spec.half_size,
                          n=self.ctrl.spec.n)
+        self._load_spec(spec)                 # the sliders and fields must show the preset
+        self.ctrl.set_spec(spec, source=self)
+
+    def _emit(self, az, el, off):
+        old = self.ctrl.spec
+        spec = PlaneSpec(azimuth=az, elevation=el, offset=off, half_size=old.half_size, n=old.n)
+        self._load_spec(spec)
         self.ctrl.set_spec(spec, source=self)
 
     def _sliders_moved(self, *_):
         if self._block:
             return
-        old = self.ctrl.spec
-        spec = PlaneSpec(azimuth=self.az.value(), elevation=self.el.value(), offset=self.off.value() / 100,
-                         half_size=old.half_size, n=old.n)
-        self.ctrl.set_spec(spec, source=self)
+        self._emit(self.az.value(), self.el.value(), self.off.value() / 100)
+
+    def _spins_changed(self, *_):
+        if self._block:
+            return
+        self._emit(self.az_spin.value(), self.el_spin.value(), self.off_spin.value())
 
     def _plane_changed(self, payload):
         spec, source = payload
@@ -302,7 +325,11 @@ class SlicePanel(QWidget):
         self.fig.clear()
         self.fig.set_facecolor(p["plot_bg"])
         with matplotlib.rc_context(style.mpl_rc()):
-            ax = self.fig.add_subplot()
+            # top row: title (left) + orientation sketch (right); below: the slice.  Separate cells, no overlap.
+            gs = self.fig.add_gridspec(2, 2, height_ratios=[1.3, 3.6], width_ratios=[1.5, 1])
+            ax_title = self.fig.add_subplot(gs[0, 0])
+            ax_title.set_axis_off()
+            ax = self.fig.add_subplot(gs[1, :])
             L = data.spec.half_size
             ext = (-L, L, -L, L)
             AXIS_COL = "#e09a2d"
@@ -391,8 +418,8 @@ class SlicePanel(QWidget):
             where = ""
             if abs(d) > self.domain.r_min:
                 where = f"\norigin {abs(d):.2f} " + ("below" if d > 0 else "above") + " the plane"
-            ax.set_title(f"{_plane_name(data.spec)}\nn = {_axis_name(n)} points toward you{where}", fontsize=10,
-                         loc="left")
+            ax_title.text(0.0, 0.05, f"{_plane_name(data.spec)}\nn = {_axis_name(n)} points toward you{where}",
+                          fontsize=10, ha="left", va="bottom", color=p["plot_ink"], transform=ax_title.transAxes)
             ticks = np.arange(-L, L + 1e-9, 0.5)
             ax.set_xticks(ticks)
             ax.set_yticks(ticks)
@@ -402,8 +429,7 @@ class SlicePanel(QWidget):
             ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.0, -0.32), ncol=1, fontsize=8.5,
                       frameon=False)
             # orientation inset: the plane, its normal and the symmetry axis in 3D
-            ins = self.fig.add_axes([0.58, 0.78, 0.42, 0.22], projection="3d")
-            ins.set_in_layout(False)
+            ins = self.fig.add_subplot(gs[0, 1], projection="3d")
             ins.set_axis_off()
             ins.set_facecolor((0, 0, 0, 0))
             c = data.spec.center
@@ -418,7 +444,7 @@ class SlicePanel(QWidget):
             ins.text(0, 1.2, -0.05, "y", fontsize=9, color=p["plot_ink2"])
             ins.quiver(*c, *(0.8 * n), color="#e09a2d", lw=1.6, arrow_length_ratio=0.3)
             tip = c + 1.0 * n
-            ins.text(*(tip + 0.25 * n), "n (you)", fontsize=9, color="#e09a2d", ha="center", va="bottom")
+            ins.text(*(tip + 0.6 * n), "n (you)", fontsize=9, color="#e09a2d", ha="center", va="bottom")
             ins.set_xlim(-1, 1)
             ins.set_ylim(-1, 1)
             ins.set_zlim(-1, 1)

@@ -178,7 +178,7 @@ class View3DPanel(QWidget):
         g = QGroupBox("Slice plane (see the Slice plane tab)")
         gv = QVBoxLayout(g)
         self.chk_slice = QCheckBox("show the slice plane here")
-        self.chk_slice.setChecked(True)
+        self.chk_slice.setChecked(False)      # off by default: the user turns the plane on
         self.chk_slice.setToolTip("the plane coloured by u·n with its in-plane streamlines")
         self.chk_plane_widget = QCheckBox("drag the plane in 3D")
         self.chk_plane_widget.setToolTip("adds a plane handle: drag it to move, the arrow to tilt")

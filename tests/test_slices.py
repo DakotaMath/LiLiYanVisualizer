@@ -125,6 +125,16 @@ def test_slice_panel_sync_and_export(app, tmp_path):
         app.processEvents()
         time.sleep(0.01)
     assert got[-1][0].spec.elevation == pytest.approx(45)
+    # a preset moves the sliders, and a later slider move starts from the preset
+    panel._preset(0, 0)
+    assert panel.az.value() == 0 and panel.el.value() == 0 and panel.off.value() == 0
+    panel.off.setValue(30)
+    assert ctrl.spec.azimuth == pytest.approx(0) and ctrl.spec.offset == pytest.approx(0.3)
+    # typed values are exact (finer than the slider steps)
+    panel.az_spin.setValue(12.34)
+    assert ctrl.spec.azimuth == pytest.approx(12.34) and panel.az.value() == 12
+    panel.off_spin.setValue(0.123)
+    assert ctrl.spec.offset == pytest.approx(0.123) and ctrl.spec.azimuth == pytest.approx(12.34)
     out = panel.export("png", str(tmp_path / "s.png"))
     assert os.path.getsize(out) > 1000
     panel.shutdown()
