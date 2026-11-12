@@ -167,6 +167,8 @@ class MainWindow(QMainWindow):
         self.slice.setVisible(on)
         self.dock_slice.setVisible(on)
         self.act_slice.setText("Hide 2D slice" if on else "Show 2D slice")
+        # follow the button in the 3D view too; the 3D controls checkbox can still override it afterwards
+        self.view3d.chk_slice.setChecked(on)
         if on:
             self.split.setSizes([10000, 10000])         # 3D and slice equally wide
             self.dock_slice.raise_()

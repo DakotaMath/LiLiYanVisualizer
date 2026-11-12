@@ -33,9 +33,11 @@ class CompactSpin(QDoubleSpinBox):
 class ParamRow:
     """One parameter: name | slider | value | [min, max]."""
 
-    def __init__(self, grid: QGridLayout, row: int, name: str, on_change):
+    def __init__(self, grid: QGridLayout, row: int, name: str, on_change, value_filter=None):
         self.name = name
         self._on_change = on_change
+        self._filter = value_filter          # (name, old, new) -> allowed new value (the global lock)
+        self._prev = 0.0                     # last accepted value
         self._block = False
         text, tip = LABELS[name]
         lab = QLabel(text)
@@ -44,7 +46,7 @@ class ParamRow:
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setRange(0, SLIDER_STEPS)
         self.slider.setMinimumWidth(100)
-        self.spin = self._spin(-1e6, 1e6, 6)
+        self.spin = self._spin(-1e6, 1e6, 13)    # full precision (edges need it); shown with 7 digits
         self.spin.setToolTip(tip)
         self.lo = self._spin(-1e6, 1e6, 3, lo)
         self.hi = self._spin(-1e6, 1e6, 3, hi)
@@ -97,8 +99,21 @@ class ParamRow:
         if v > self.hi.value():
             self.hi.setValue(v)
         self.spin.setValue(v)
+        self._prev = self.spin.value()
         self._sync_slider()
         self._block = False
+
+    def _accept(self, v: float) -> None:
+        """Pass a user edit through the lock, show the accepted value and notify."""
+        if self._filter is not None:
+            v = self._filter(self.name, self._prev, v)
+        old = self._block
+        self._block = True
+        self.spin.setValue(v)
+        self._block = old
+        self._prev = self.spin.value()
+        self._sync_slider()
+        self._on_change()
 
     def _sync_slider(self):
         lo, hi = self.lo.value(), self.hi.value()
@@ -114,18 +129,12 @@ class ParamRow:
         if self._block:
             return
         lo, hi = self.lo.value(), self.hi.value()
-        v = lo + (hi - lo) * pos / SLIDER_STEPS
-        old = self._block
-        self._block = True
-        self.spin.setValue(v)
-        self._block = old
-        self._on_change()
+        self._accept(lo + (hi - lo) * pos / SLIDER_STEPS)
 
-    def _spin_changed(self, _v):
+    def _spin_changed(self, v):
         if self._block:
             return
-        self._sync_slider()
-        self._on_change()
+        self._accept(v)
 
 
 class ParamsPanel(QWidget):
@@ -146,7 +155,7 @@ class ParamsPanel(QWidget):
                 grid.addWidget(h, 0, col)
                 if col >= 3:
                     self._range_heads.append(h)
-        self.rows = {n: ParamRow(grid, i + 1, n, self._changed) for i, n in enumerate(PARAM_NAMES)}
+        self.rows = {n: ParamRow(grid, i + 1, n, self._changed, self._lock_filter) for i, n in enumerate(PARAM_NAMES)}
         grid.addWidget(QLabel("base point x₀"), len(PARAM_NAMES) + 1, 0)
         self.xb = ParamRow._spin(-0.99, 0.99, 4, 0.0)
         self.xb.setToolTip("base point x_b = cos θ_b of the Cauchy data (default: equator)")
@@ -159,6 +168,16 @@ class ParamsPanel(QWidget):
         self.show_ranges.toggled.connect(self._toggle_ranges)
 
         grid.addWidget(self.show_ranges, len(PARAM_NAMES) + 2, 2, 1, 3)
+        self.lock = QCheckBox("lock to global solutions")
+        self.lock.setChecked(True)
+        self.lock.setToolTip("a slider or typed value that would leave the global set stops at its edge "
+                             "(the last global value in that direction)")
+        grid.addWidget(self.lock, len(PARAM_NAMES) + 2, 0, 1, 2)
+        self.lock_note = QLabel("")
+        self.lock_note.setWordWrap(True)
+        self.lock_note.setStyleSheet(f"color:{style.c()['muted']};font-size:11px;")
+        grid.addWidget(self.lock_note, len(PARAM_NAMES) + 3, 0, 1, 6)
+        self.lock_note.hide()
         self._toggle_ranges(False)
         v.addWidget(box)
 
@@ -203,6 +222,7 @@ class ParamsPanel(QWidget):
             r.range_lab.setStyleSheet(f"color:{style.c()['faint']};font-size:10px;")
         for h in self._range_heads:
             h.setStyleSheet(f"color:{style.c()['muted']};font-size:11px;")
+        self.lock_note.setStyleSheet(f"color:{style.c()['muted']};font-size:11px;")
 
     # ---------------------------------------------------------------- state
     def params(self) -> Params:
@@ -219,6 +239,33 @@ class ParamsPanel(QWidget):
 
     def _changed(self):
         self.paramsChanged.emit(self.params())
+
+    # ---------------------------------------------------------------- global lock
+    def _lock_filter(self, name: str, old: float, new: float) -> float:
+        """With the lock on, a move from a global point stops at the last global value toward `new`."""
+        self.lock_note.hide()
+        if not self.lock.isChecked() or new == old:
+            return new
+        from ...core.solver import is_global_fast
+        base = self.params()                        # the other parameters as they are now
+        at = lambda v: base.with_(**{name: v})
+        if is_global_fast(at(new)):
+            return new
+        if not is_global_fast(at(old)):              # already outside: nothing to hold on to
+            return new
+        g, b = old, new                              # g global, b not: bisect for the edge
+        tol = 1e-9 * max(1.0, abs(old), abs(new))
+        while abs(b - g) > tol:
+            mid = 0.5 * (g + b)
+            if is_global_fast(at(mid)):
+                g = mid
+            else:
+                b = mid
+        side = "maximum" if new > old else "minimum"
+        self.lock_note.setText(f"Locked: {LABELS[name][0]} held at its global {side} {g:.7g} "
+                               f"(untick 'lock to global solutions' to go past it)")
+        self.lock_note.show()
+        return g
 
     # ---------------------------------------------------------------- presets
     def preset_rest(self):

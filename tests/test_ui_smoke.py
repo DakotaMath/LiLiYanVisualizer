@@ -70,8 +70,11 @@ def test_main_window_solves_and_updates(app, tmp_path):
     assert not w.slice.isVisible() and not w.dock_slice.isVisible()
     w.slice_btn.click()
     assert w.slice.isVisible() and w.dock_slice.isVisible() and w.act_slice.text() == "Hide 2D slice"
+    assert w.view3d.chk_slice.isChecked()          # the 3D slice follows the button ...
+    w.view3d.chk_slice.setChecked(False)           # ... but can be overridden
+    assert w.slice.isVisible()
     w.slice_btn.click()
-    assert not w.slice.isVisible()
+    assert not w.slice.isVisible() and not w.view3d.chk_slice.isChecked()
     # a non-global choice updates the status with the blow-up point
     w.params.set_params(Params(gamma=5.0))
     assert _wait(app, lambda: w.last is not None and w.last[0].gamma == 5.0)
@@ -92,6 +95,7 @@ def test_main_window_solves_and_updates(app, tmp_path):
 def test_slider_and_spin_stay_in_sync(app):
     from swirl_explorer.ui.panels.params_panel import ParamsPanel
     pp = ParamsPanel()
+    pp.lock.setChecked(False)                 # this test is about the widgets, not the global lock
     seen = []
     pp.paramsChanged.connect(seen.append)
     row = pp.rows["kappa"]
@@ -100,3 +104,22 @@ def test_slider_and_spin_stay_in_sync(app):
     assert seen and seen[-1].kappa == pytest.approx(2.5)
     row.spin.setValue(8.0)                    # outside the range: slider pins to the end
     assert row.slider.value() == 2000
+
+
+def test_global_lock_holds_sliders_at_the_edge(app):
+    from swirl_explorer.core.edges import gamma_minus
+    from swirl_explorer.core.solver import is_global_fast
+    from swirl_explorer.ui.panels.params_panel import ParamsPanel
+    pp = ParamsPanel()
+    assert pp.lock.isChecked()                # on by default
+    pp.preset_G()                             # c = 0, kappa = 1, gamma = gamma_- + 0.1 (global)
+    gm = gamma_minus(Params(kappa=1.0))
+    row = pp.rows["gamma"]
+    row.spin.setValue(-3.0)                   # past the lower lens edge: held at the edge (its minimum)
+    assert row.value() == pytest.approx(gm, abs=1e-6) and row.value() >= gm - 1e-9
+    assert is_global_fast(pp.params()) and pp.lock_note.text().startswith("Locked")
+    row.spin.setValue(-1.0)                   # moving back inside is free
+    assert row.value() == pytest.approx(-1.0)
+    pp.lock.setChecked(False)                 # unlocked: anything goes
+    row.spin.setValue(-3.0)
+    assert row.value() == pytest.approx(-3.0) and not is_global_fast(pp.params())
