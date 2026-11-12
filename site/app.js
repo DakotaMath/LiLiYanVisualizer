@@ -720,6 +720,20 @@ async function main() {
   $("show-ranges").addEventListener("change", renderRanges);
   $("btn-theme").addEventListener("click", () => setTheme(S.theme === "dark" ? "light" : "dark"));
   $("btn-help").addEventListener("click", () => $("help").showModal());
+  // the getting-started card: shown until dismissed (remembered in this browser)
+  let introOff = false;
+  try { introOff = localStorage.getItem("swirl.intro") === "off"; } catch (e) { /* storage blocked */ }
+  $("intro").hidden = introOff;
+  $("intro-close").addEventListener("click", () => { $("intro").hidden = true; try { localStorage.setItem("swirl.intro", "off"); } catch (e) {} });
+  $("btn-intro").addEventListener("click", () => { $("intro").hidden = false; $("left").scrollTop = 0; });
+  // the path panel's height can be dragged, like the desktop's dock splitter
+  $("bottom-grip").addEventListener("mousedown", (ev) => {
+    ev.preventDefault();
+    const y0 = ev.clientY, h0 = $("bottom").offsetHeight;
+    const move = (e) => { $("bottom").style.height = `${Math.max(150, Math.min(window.innerHeight * 0.7, h0 + y0 - e.clientY))}px`; };
+    const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); view.resize(); refreshViews(); };
+    window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+  });
   $("btn-save").addEventListener("click", async () => {
     const text = await py.call("session_json", collectSession());
     download(URL.createObjectURL(new Blob([text], { type: "application/json" })), "session.swirl.json");

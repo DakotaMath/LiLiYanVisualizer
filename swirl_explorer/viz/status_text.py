@@ -45,11 +45,13 @@ def pole_line(name: str, d: PoleDiagnostics, sign: int) -> tuple[str, str]:
                 "the solution would blow up beyond the computed window (book's terminal test)")
     U = d.U_lim if sign > 0 else -d.U_lim
     pole = "U(1)" if sign > 0 else "U(−1)"
-    unc = (f" <span style='color:{_col('bad')}'>(uncertain)</span>" if d.confidence < 0.9 else "")
+    unc = (f" <span style='color:{_col('bad')}' title='the pole type was classified with confidence "
+           f"{d.confidence:.2f} &lt; 0.9: the solution is close to a boundary between types'>(uncertain)</span>"
+           if d.confidence < 0.9 else "")
     tg = {"G": "generic", "R": "recessive", "L1": "log, bounded swirl", "L2": "log, unbounded swirl",
           "R0": "no-swirl recessive"}.get(d.stratum, "")
     line = (f"<b>{name}</b> &nbsp;type <b>{d.stratum}</b> ({tg}){unc} · μ = {_fmt(d.mu)} · "
-            f"{pole} = {_fmt(U)} · class <b>{_bp_short(d.bp)}</b>")
+            f"{pole} = {_fmt(U)} · class <b title='Bradshaw–Palmer {BP_GLOSS.get(d.bp, d.bp)}'>{_bp_short(d.bp)}</b>")
     ex = d.exponents or {}
     plain, html = [], []
     for k, lab, hl in (("u_r", "u_r", "u<sub>r</sub>"), ("u_theta", "u_θ", "u<sub>θ</sub>"),

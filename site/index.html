@@ -23,12 +23,23 @@
     <button id="btn-open" title="open a session file (.json), also from the desktop app">Open session…</button>
     <button id="btn-save" title="download everything as a session file (.json); the desktop app opens it too">Save session</button>
     <button id="btn-theme" title="switch between the dark and the light theme">Light theme</button>
+    <button id="btn-intro" title="show the getting-started card">Help</button>
     <button id="btn-help" title="conventions and how this page works">Conventions</button>
     <input id="file-open" type="file" accept=".json,application/json" hidden>
   </header>
 
   <aside id="left">
     <h2 class="dock-title">Parameters</h2>
+    <section id="intro" class="group intro" hidden>
+      <h3>Getting started <button id="intro-close" class="x" title="hide this card (Help brings it back)">×</button></h3>
+      <ul>
+        <li>Move a <b>slider</b> or type a value: the solution, the 3D view and the profiles follow. <b>Presets</b> jump to the book's examples.</li>
+        <li>With <b>lock to global solutions</b> on, edits stop at the edge of the global set.</li>
+        <li>The <b>Σ-map</b> tab shows which data are global; click it to jump there, shift-click to add a path keyframe.</li>
+        <li><b>Show 2D slice</b> cuts the flow with a plane; <b>Path &amp; movie</b> animates the data along keyframes.</li>
+        <li>Everything runs in your browser; <b>Save session</b> files open in the desktop app too.</li>
+      </ul>
+    </section>
     <section class="group">
       <h3>Data at the base point</h3>
       <div id="param-grid" class="param-grid"></div>
@@ -220,6 +231,7 @@
   </aside>
 
   <section id="bottom" hidden>
+    <div id="bottom-grip" title="drag to resize the path panel"></div>
     <h2 class="dock-title">Path</h2>
     <div class="path-body">
       <div class="path-left">
