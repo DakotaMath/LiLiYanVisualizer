@@ -145,7 +145,7 @@ def _legend(data, s, cs, overlays, show_handle, slice_shown) -> list[str]:
     items.append(sw.format(c=STRATUM_COLORS["G"]) + "axis coloured by pole type (blue G, red R, amber L1, "
                  "purple L2); big cone = direction of the flow along the axis · " + sw.format(c="#9a9ca3")
                  + f"cut-outs: ball r &lt; {s.r_min:g} around 0, cylinder ρ &lt; {s.axis_a:g} around the axis"
-                 + (" · half y > 0 cut away" if s.clip else ""))
+                 + (" · near half y &lt; 0 cut away" if s.clip else ""))
     if data.swirl_arcs:
         items.append(sw.format(c="#e65100") + "orange arcs: sense of the swirl u_φ near each pole")
     items.append(sw.format(c=P["origin"]) + "grey ball: origin cut out (u ~ 1/|X| is singular there)")

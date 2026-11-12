@@ -8,3 +8,4 @@ dist/
 build_log*.txt
 .venv-web/
 .venv-web/
+_site/

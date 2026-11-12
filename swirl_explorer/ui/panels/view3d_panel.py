@@ -154,7 +154,7 @@ class View3DPanel(QWidget):
                 ("show_iso", "isosurface", "level set of the field chosen below"),
                 ("show_selfsim", "self-similar copies", "the seed-centre streamline and its rescalings λX "
                                                          "(also streamlines, since u is (−1)-homogeneous)"),
-                ("clip", "cut away the half y > 0", "clip lines and surfaces by the plane y = 0")):
+                ("clip", "cut away the near half (y < 0)", "clip lines and surfaces by the plane y = 0; the half facing the default camera goes")):
             c = QCheckBox(text)
             c.setToolTip(tip)
             c.setChecked(getattr(self.settings, key))
