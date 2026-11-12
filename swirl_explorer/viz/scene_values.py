@@ -47,7 +47,8 @@ def colour_spec(values: np.ndarray, which: str) -> dict:
         return dict(cmap=SEQUENTIAL, clim=(0, 1), log_scale=False)
     if which == "speed":
         lo, hi = np.percentile(v[v > 0], [2, 98]) if (v > 0).any() else (1e-3, 1)
-        return dict(cmap=SEQUENTIAL, clim=(max(lo, 1e-6), max(hi, lo * 10)), log_scale=True)
+        lo = max(float(lo), 1e-6)                 # round-off speeds (rest state) must not invert the limits
+        return dict(cmap=SEQUENTIAL, clim=(lo, max(float(hi), lo * 10)), log_scale=True)
     m = np.percentile(np.abs(v), 50)        # robust: the axis/origin spikes would wash out the map
     m = m if m > 0 else 1.0
     return dict(cmap=DIVERGING, clim=(-m, m), log_scale=False)

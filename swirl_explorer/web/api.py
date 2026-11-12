@@ -365,7 +365,7 @@ def sigma_draw(opts: dict) -> dict:
     if opts.get("path"):
         ov = _path_overlay(opts["path"])
     axs = draw_sigma(fig, res, opts.get("mode", "global"), edge=bool(opts.get("edge", True)),
-                     mu=bool(opts.get("mu", False)), current=cur, path_overlay=ov)
+                     mu_contours=bool(opts.get("mu", False)), current=cur, path_overlay=ov)
     png = _png(fig, dpi)
     W, H = fig.bbox.width, fig.bbox.height
     boxes = []

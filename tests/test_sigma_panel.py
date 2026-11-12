@@ -121,3 +121,17 @@ def test_hover_readout(app):
     assert "GLOBAL" in inside and "North: G" in inside
     assert "not global" in outside
     pan.shutdown()
+
+
+@pytest.mark.parametrize("mode", ["global", "strata", "mu"])
+@pytest.mark.parametrize("mu_contours", [False, True])
+def test_every_view_draws(mode, mu_contours):
+    """The shared drawing (viz.sigma_plot.draw_sigma) in every view, with and without μ contours."""
+    from matplotlib.figure import Figure
+    from swirl_explorer.core.sigma_map import SigmaMapSpec, compute_sigma_map
+    from swirl_explorer.viz.sigma_plot import draw_sigma
+    res = compute_sigma_map(SigmaMapSpec(Params(), "gamma", "kappa", (-2.6, 2.6), (-4.6, 4.6), nx=15, ny=15))
+    fig = Figure(figsize=(6, 6), layout="constrained")
+    axs = draw_sigma(fig, res, mode, edge=True, mu_contours=mu_contours, current=Params(gamma=-1.6, kappa=1.0))
+    assert len(axs) == (1 if mode == "global" else 2)
+    fig.canvas.draw()

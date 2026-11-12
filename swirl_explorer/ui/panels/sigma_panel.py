@@ -327,7 +327,7 @@ class SigmaMapPanel(QWidget):
         self.fig.clear()
         self.fig.set_facecolor(style.c()["plot_bg"])
         self._axes = draw_sigma(self.fig, self.res, mode, edge=self.chk_edge.isChecked(),
-                                mu=self.chk_mu.isChecked(), current=self.current,
+                                mu_contours=self.chk_mu.isChecked(), current=self.current,
                                 path_overlay=self.path_overlay)
         if self._axes:
             from matplotlib.widgets import MultiCursor

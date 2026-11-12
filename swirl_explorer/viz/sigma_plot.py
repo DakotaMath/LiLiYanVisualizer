@@ -148,7 +148,7 @@ def mu_lines(ax, xs, ys, m, color, halo, labels=True, extra_ls=None):
                 t.set_color(lc)
                 t.set_path_effects([pe.Stroke(linewidth=2.5, foreground=halo), pe.Normal()])
 
-def draw_sigma(fig, res, mode: str = "global", edge: bool = True, mu: bool = False,
+def draw_sigma(fig, res, mode: str = "global", edge: bool = True, mu_contours: bool = False,
                current=None, path_overlay=None) -> list:
     """Draw a Σ-map result into `fig`; returns the map axes (for click-to-data mapping)."""
     import matplotlib
@@ -263,7 +263,7 @@ def draw_sigma(fig, res, mode: str = "global", edge: bool = True, mu: bool = Fal
             if edge and res.done.sum() > 4:
                 gm = np.where(res.done, res.is_global.astype(float), np.nan)
                 ax.contour(xs, ys, gm, levels=[0.5], colors=[p["plot_ink"]], linewidths=1.4, zorder=5)
-            if mu and mode != "mu":
+            if mu_contours and mode != "mu":
                 mu_lines(ax, xs, ys, np.where(res.is_global, res.mu_n, np.nan), "#ffffff", "#101114")
                 mu_lines(ax, xs, ys, np.where(res.is_global, res.mu_s, np.nan), "#f2c14e", "#101114",
                                labels=False)
@@ -290,7 +290,7 @@ def draw_sigma(fig, res, mode: str = "global", edge: bool = True, mu: bool = Fal
                                 bbox=box)
             handles.append(Line2D([], [], ls="", marker="|", ms=10, mew=2, color="#f2c14e",
                                   label="book's values (Fig. 1.3): apex κ_max, Landau window"))
-        if mu and mode != "mu":
+        if mu_contours and mode != "mu":
             handles += [Line2D([], [], color="#ffffff", lw=1.4, label="μ₊ contours (north): ½ dotted, ⅔ dashed, 1 dash-dot"),
                         Line2D([], [], color="#f2c14e", lw=1.4, label="μ₋ contours (south), same styles")]
         if edge:

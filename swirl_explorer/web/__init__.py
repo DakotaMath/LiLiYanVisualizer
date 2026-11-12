@@ -1,11 +1,7 @@
-"""Browser version of Swirl Explorer (trame), built on the same core as the desktop app.
+"""Browser version of Swirl Explorer: the Python side of the static web page (site/).
 
-Layout of the package:
-
-    core/  viz/  io/    shared by both front ends; no Qt imports (checked by tests/test_layout.py)
-    ui/                 desktop front end (PySide6 + pyvistaqt)
-    web/                browser front end (trame + PyVista), deployed to a Hugging Face Space
-
-Install with ``pip install -r requirements-web.txt``.  Nothing in ``web/`` may be imported
-by ``ui/`` or by the shared packages, and the Windows build leaves ``web/`` out.
+The page runs this package in the visitor's browser with Pyodide (CPython in WebAssembly) and calls
+``api.call(name, json_args)``; ``rows`` serves the Σ-map worker pool.  Only numpy, scipy and
+matplotlib are needed here: no Qt, no VTK (tests/test_layout.py and tests/test_web_api.py check it).
+See docs/web_version.md.
 """
