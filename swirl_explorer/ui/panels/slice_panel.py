@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import math
 import threading
+import warnings
+
+# harmless: the hidden (zero-size) slice canvas cannot be laid out until it is shown
+warnings.filterwarnings("ignore", message="constrained_layout not applied")
 
 import numpy as np
 from PySide6.QtCore import Qt, QObject, QThread, QTimer, Signal, Slot
