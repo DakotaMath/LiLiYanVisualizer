@@ -128,3 +128,14 @@ def test_slice_panel_sync_and_export(app, tmp_path):
     out = panel.export("png", str(tmp_path / "s.png"))
     assert os.path.getsize(out) > 1000
     panel.shutdown()
+
+
+def test_signed_log_display_inverts(fi):
+    d = sample_plane(fi, PlaneSpec(n=61), Domain())
+    d.set_display(False, symlog=True)
+    ok = np.isfinite(d.un)
+    assert np.allclose(d.to_value(d.show[ok]), d.un[ok], rtol=1e-10, atol=1e-12)
+    assert np.nanmax(np.abs(d.show)) <= d.clim + 1e-12           # nothing saturates on the log scale
+    d.set_display(True)                                            # rho-scaled, linear
+    rho = np.hypot(d.X[..., 0], d.X[..., 1])
+    assert np.allclose(d.show[ok], (d.un * rho)[ok]) and d.to_value(2.0) == 2.0

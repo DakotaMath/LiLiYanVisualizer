@@ -5,7 +5,7 @@ solutions of the stationary Navier–Stokes equations in R³ \ {axis}. It follow
 monograph *Axisymmetric (−1)-homogeneous solutions of the stationary Navier–Stokes
 equations with swirl*, which is in `docs/`.
 
-**Status:** milestones 1 and 2 are done.
+**Status:** milestones 1 to 4 are done.
 
 - Milestone 1: core solver, pole diagnostics, regression tests.
 - Milestone 2: the Qt shell, with the parameter panel, the live status and stacked
@@ -21,7 +21,14 @@ equations with swirl*, which is in `docs/`.
 
   The theme is dark by default (View menu: light).
 
-The slice plane and the Σ-map come next.
+- Milestone 4: a slice plane next to the 3D view. It shows:
+  - colour by u·n or ρ·u·n, on a linear or signed-log scale, shared with the 3D view;
+  - projected streamlines and an optional LIC texture;
+  - the axis and the cut-out around the origin, with a small orientation sketch;
+  - presets, azimuth/elevation/offset sliders, a draggable plane in 3D, and
+    "point the 3D camera along n".
+
+The Σ-map comes next.
 
 Start the app with:
 

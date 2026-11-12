@@ -41,14 +41,14 @@ for g in [x / 10 for x in range(-30, 31, 3)]:
 log("rapid slider"); settle(2)
 v._view_from_pole(); v._reset_camera(); log("cameras"); settle()
 from swirl_explorer.viz.slices import PlaneSpec
-w.tabs.setCurrentWidget(w.slice); settle(1)
+settle(1)
 for spec in (PlaneSpec(), PlaneSpec(elevation=90, offset=0.4), PlaneSpec(azimuth=40, elevation=30, offset=-0.3)):
     w.slice_ctrl.set_spec(spec, source="stress"); log(f"slice {spec.azimuth},{spec.elevation},{spec.offset}"); settle(1)
 w.slice.chk_lic.setChecked(True); w.slice.density.setValue(2.5); log("lic + density"); settle(1.5)
 for v_ in range(-60, 61, 15):
     w.slice.el.setValue(v_); app.processEvents()
 log("rapid slice slider"); settle(2)
-w.tabs.setCurrentWidget(v); v.chk_slice.setChecked(True); v.chk_plane_widget.setChecked(True); log("plane widget"); settle(1)
+v.chk_slice.setChecked(True); v.chk_plane_widget.setChecked(True); log("plane widget"); settle(1)
 w.slice_ctrl.set_spec(PlaneSpec(azimuth=10, elevation=50, offset=0.2), source="stress"); settle(1)
 v.chk_plane_widget.setChecked(False); v.chk_slice.setChecked(False); log("slice off"); settle(0.5)
 w.set_theme("light"); log("light theme"); settle(1); w.set_theme("dark"); log("dark theme"); settle(1)

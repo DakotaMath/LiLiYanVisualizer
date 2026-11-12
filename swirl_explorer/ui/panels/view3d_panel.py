@@ -1,6 +1,7 @@
 """3D view: PyVista interactor with draggable seed widgets, streamlines and field visualisations."""
 from __future__ import annotations
 
+import math
 import threading
 import time
 
@@ -76,7 +77,7 @@ class View3DPanel(QWidget):
             self.plotter.set_background(style.c()["view_bg"], top=style.c()["view_bg_top"])
             self.plotter.enable_parallel_projection()
             self.plotter.add_axes(color=style.c()["view_text"], xlabel="x", ylabel="y", zlabel="z", line_width=5,
-                                  viewport=(0.0, 0.0, 0.3, 0.36))
+                                  viewport=(0.0, 0.08, 0.34, 0.44))
             col = QVBoxLayout()
             col.setContentsMargins(0, 0, 0, 0)
             col.setSpacing(0)
@@ -85,12 +86,12 @@ class View3DPanel(QWidget):
             self.legend.setTextFormat(Qt.RichText)
             self.legend.setWordWrap(True)
             self._style_legend()
-            col.addWidget(self.legend)
+            # the legend lives at the top of the controls (in their dock)
             h.addLayout(col, 1)
         else:  # pragma: no cover
             self.plotter = None
             h.addWidget(QLabel("PyVista / VTK not available"), 1)
-        h.addWidget(self._controls())
+        self.controls = self._controls()       # placed in a dock by the main window
         self.thread = QThread()
         self.worker = _SceneWorker()
         self.worker.moveToThread(self.thread)
@@ -107,6 +108,12 @@ class View3DPanel(QWidget):
     def _controls(self) -> QWidget:
         box = QWidget()
         v = QVBoxLayout(box)
+        if getattr(self, "legend", None) is not None:
+            lg = QGroupBox("What you see")
+            lv = QVBoxLayout(lg)
+            lv.setContentsMargins(2, 2, 2, 2)
+            lv.addWidget(self.legend)
+            v.addWidget(lg)
         v.setContentsMargins(6, 4, 6, 4)
 
         g = QGroupBox("Seeds (drag the widget in the view)")
@@ -171,6 +178,7 @@ class View3DPanel(QWidget):
         g = QGroupBox("Slice plane (see the Slice plane tab)")
         gv = QVBoxLayout(g)
         self.chk_slice = QCheckBox("show the slice plane here")
+        self.chk_slice.setChecked(True)
         self.chk_slice.setToolTip("the plane coloured by u·n with its in-plane streamlines")
         self.chk_plane_widget = QCheckBox("drag the plane in 3D")
         self.chk_plane_widget.setToolTip("adds a plane handle: drag it to move, the arrow to tilt")
@@ -230,7 +238,7 @@ class View3DPanel(QWidget):
         sc = QScrollArea()
         sc.setWidget(box)
         sc.setWidgetResizable(True)
-        sc.setFixedWidth(258)
+        sc.setMinimumWidth(260)
         return sc
 
     def _read_controls(self):
@@ -352,15 +360,16 @@ class View3DPanel(QWidget):
         for n in list(pl.actors):
             if n.startswith("sx_"):
                 pl.remove_actor(n, render=False)
-        if pl.scalar_bars:
-            pl.remove_scalar_bar()
+        for title in list(pl.scalar_bars.keys()):      # the slice keeps its own bar ("slice u.n")
+            if title not in ("slice u.n", "slice rho*u.n"):
+                pl.remove_scalar_bar(title)
         P = style.c()
         pl.add_mesh(data.outline, color=P["outline"], line_width=1, name="sx_outline", pickable=False)
         for (mesh, col, lab), nm in zip(data.axis, ("sx_axisN", "sx_axisS")):
             pl.add_mesh(mesh, color=col, name=nm, smooth_shading=True)
         for (mesh, col, lab), z, nm in zip(data.axis, (1.1, -1.1), ("sx_labN", "sx_labS")):
             pl.add_point_labels(np.array([[0, 0, z]]), [lab], name=nm, text_color="white", font_size=13,
-                                shape_color=col, shape_opacity=0.95, show_points=False, always_visible=True)
+                                shape_color=col, shape_opacity=0.95, show_points=False, always_visible=False)
         if s.clip:
             disc = pv.Disc(center=(0, 0, 0), normal=(0, 1, 0), inner=0.0, outer=data.domain.R, c_res=72)
             pl.add_mesh(disc, color=P["cut_plane"], opacity=0.07, name="sx_cutplane")
@@ -374,10 +383,10 @@ class View3DPanel(QWidget):
         self.color_by.setToolTip("" if coloured else "nothing on screen is colour-mapped right now "
                                  "(streamlines are dimmed while overlays are shown)")
         if coloured:
-            pl.add_text(VTK_TITLES[s.color_by], position=(0.70, 0.86), viewport=True, font_size=8,
+            pl.add_text(VTK_TITLES[s.color_by], position=(0.04, 0.08), viewport=True, font_size=8,
                         color=P["view_text"], name="sx_bartitle")
-        bar = dict(title="", color=P["view_text"], vertical=True, position_x=0.88,
-                   position_y=0.12, height=0.72, width=0.05, title_font_size=1, label_font_size=13,
+        bar = dict(title="", color=P["view_text"], vertical=False, position_x=0.04,
+                   position_y=0.02, height=0.045, width=0.42, title_font_size=1, label_font_size=10,
                    n_labels=5, fmt=fmt)
         first = True
 
@@ -402,7 +411,7 @@ class View3DPanel(QWidget):
             pl.add_mesh(data.origin_ball, color="#8a8c92", ambient=0.3, name="sx_origin")
             pl.add_point_labels(np.array([[-0.75, 0.0, -0.3]]), ["origin (cut out)"],
                                 name="sx_origin_lab", font_size=11, text_color=P["view_text"], shape_opacity=0.0,
-                                show_points=False, always_visible=True)
+                                show_points=False, always_visible=False)
         for i, (arc, sense) in enumerate(data.swirl_arcs):
             pl.add_mesh(arc, color="#e65100", name=f"sx_arc{i}", smooth_shading=True)
         if s.seed_mode in ("ring", "rings") and self.show_handle.isChecked():
@@ -429,7 +438,7 @@ class View3DPanel(QWidget):
             pl.add_point_labels(ends, ["X(s)"] + [f"{l}·X" for l in lam[1:len(ends)]], name="sx_selfsim_lab",
                                 font_size=12, text_color=P["view_text"], shape_opacity=0.6,
                                 shape_color=P["view_bg"],
-                                show_points=False, always_visible=True)
+                                show_points=False, always_visible=False)
         sw = "<span style='color:{c};font-size:15px'>■</span>&nbsp;"
         import matplotlib
         cm = matplotlib.colormaps[cs["cmap"]] if isinstance(cs["cmap"], str) else cs["cmap"]
@@ -520,8 +529,11 @@ class View3DPanel(QWidget):
 
     def _slice_toggled(self, on):
         if not on and self.plotter is not None:
-            for n in ("sl_plane", "sl_lines", "sl_normal"):
+            for n in ("sl_plane", "sl_lines", "sl_normal", "sl_outline"):
                 self.plotter.remove_actor(n, render=False)
+            for t in ("slice u.n", "slice rho*u.n"):
+                if t in self.plotter.scalar_bars:
+                    self.plotter.remove_scalar_bar(t)
             self.plotter.render()
         else:
             self._draw_slice(render=True)
@@ -531,8 +543,11 @@ class View3DPanel(QWidget):
         pl = self.plotter
         if pl is None:
             return
-        for n in ("sl_plane", "sl_lines", "sl_normal"):
+        for n in ("sl_plane", "sl_lines", "sl_normal", "sl_outline"):
             pl.remove_actor(n, render=False)
+        for t in ("slice u.n", "slice rho*u.n"):
+            if t in pl.scalar_bars:
+                pl.remove_scalar_bar(t)
         if not self.chk_slice.isChecked() or self._slice is None:
             if render:
                 pl.render()
@@ -541,22 +556,46 @@ class View3DPanel(QWidget):
         data, lines = self._slice
         X = data.X
         grid = pv.StructuredGrid(X[..., 0], X[..., 1], X[..., 2])
-        un = data.un
-        v = un[np.isfinite(un)]
-        m = float(np.percentile(np.abs(v), 95)) if v.size else 1.0
-        grid["un"] = un.ravel(order="F")
-        pl.add_mesh(grid, scalars="un", cmap="RdBu_r", clim=(-m, m), nan_opacity=0.0, opacity=0.85,
-                    show_scalar_bar=False, name="sl_plane", smooth_shading=False)
+        if data.show is None:
+            data.set_display(False)
+        grid["un"] = data.show.ravel(order="F")
+        m = data.clim
+        pl.add_mesh(grid, scalars="un", cmap="RdBu_r", clim=(-m, m), nan_opacity=0.0, opacity=0.95,
+                    show_scalar_bar=False, name="sl_plane", smooth_shading=False, show_edges=False,
+                    lighting=False,                       # unlit: the same colours as the 2D slice
+                    scalar_bar_args=dict(title="slice u.n" if data.show_label == "u·n" else "slice rho*u.n",
+                                         n_labels=3,
+                                         vertical=False, position_x=0.53, position_y=0.02, width=0.42,
+                                         height=0.045, color=style.c()["view_text"], fmt="%.2g",
+                                         title_font_size=11, label_font_size=10))
+        d = data.spec.offset
+        if abs(d) < 1.0:                               # the region is the unit ball
+            rr = math.sqrt(1.0 - d * d)
+            th = np.linspace(0, 2 * np.pi, 145)
+            ring = data.spec.to_world(rr * np.cos(th), rr * np.sin(th))
+            pl.add_mesh(pv.lines_from_points(ring), color="#f2c14e", line_width=2, name="sl_outline")
         lift = 0.006 * data.spec.normal                # draw the lines just above the plane (no z-fighting)
-        polys = [data.spec.to_world(L[:, 0], L[:, 1]) + lift for L in lines if len(L) > 1]
+        polys = [data.spec.to_world(L[:, 0], L[:, 1]) + lift for L in lines[::2] if len(L) > 1]
         if polys:
             from ...viz.scene3d import _polylines
-            pl.add_mesh(_polylines(polys), color="#111111", line_width=1.5, name="sl_lines")
+            pl.add_mesh(_polylines(polys), color="#111111", line_width=1.0, name="sl_lines")
         c, n = data.spec.center, data.spec.normal
         pl.add_mesh(pv.Arrow(start=c, direction=n, scale=0.35, tip_radius=0.08, shaft_radius=0.025),
                     color="#f2c14e", name="sl_normal")
         if render:
             pl.render()
+
+    def view_along_normal(self):
+        """Camera on the +n side of the slice, looking at it, with the slice's 'up' up."""
+        if self.plotter is None or self.slice_ctrl is None:
+            return
+        spec = self.slice_ctrl.spec
+        e1, e2, n = spec.basis()
+        c = spec.center
+        self.plotter.camera_position = [tuple(c + 5 * n), tuple(c), tuple(e2)]
+        self.plotter.reset_camera(bounds=(-1.1, 1.1, -1.1, 1.1, -1.2, 1.2))
+        self.plotter.camera.zoom(1.35)
+        self.plotter.render()
 
     def _plane_widget_toggled(self, on):
         pl = self.plotter

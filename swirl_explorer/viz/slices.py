@@ -26,7 +26,7 @@ from ..core.fields import FieldInterpolator
 from .streamlines import Domain
 
 PRESETS = {                     # name -> (azimuth°, elevation°)
-    "meridional x–z": (90.0, 0.0),
+    "meridional x–z": (-90.0, 0.0),
     "meridional y–z": (0.0, 0.0),
     "horizontal x–y": (0.0, 90.0),
 }
@@ -34,7 +34,7 @@ PRESETS = {                     # name -> (azimuth°, elevation°)
 
 @dataclass
 class PlaneSpec:
-    azimuth: float = 90.0        # degrees
+    azimuth: float = -90.0       # degrees (default: meridional x–z plane, +x to the right)
     elevation: float = 0.0       # degrees
     offset: float = 0.0          # signed distance from the origin
     half_size: float = 1.0       # the plane square is [-L, L]^2 in (s, t)
@@ -93,6 +93,40 @@ class SliceData:
     speed_t: np.ndarray           # |tangential part|
     axis_hits: list = field(default_factory=list)       # (s, t) where the symmetry axis crosses the plane
     lic: Optional[np.ndarray] = None
+    # what is shown in colour (set by the panel, shared with the 3D view)
+    show: Optional[np.ndarray] = None
+    show_label: str = "u·n"
+    clim: float = float("nan")          # symmetric colour limit
+    vmax: float = float("nan")          # true max |shown value|
+
+    symlog: bool = False
+    lin_thresh: float = 1.0
+
+    def set_display(self, scale_by_rho: bool, symlog: bool = False, percentile: float = 85.0) -> None:
+        """Choose the coloured field (u·n or ρ·u·n, optionally signed-log) and one symmetric colour limit
+        shared by the 2D and 3D views."""
+        if scale_by_rho:
+            rho = np.hypot(self.X[..., 0], self.X[..., 1])
+            raw, self.show_label = self.un * rho, "ρ·(u·n)"
+        else:
+            raw, self.show_label = self.un, "u·n"
+        v = np.abs(raw[np.isfinite(raw)])
+        self.vmax = float(v.max()) if v.size else 1.0
+        self.symlog = bool(symlog)
+        if symlog:
+            lt = float(np.percentile(v, 50)) if v.size else 1.0
+            self.lin_thresh = lt if lt > 0 else 1.0
+            self.show = np.sign(raw) * np.log10(1.0 + np.abs(raw) / self.lin_thresh)
+            self.clim = float(np.log10(1.0 + self.vmax / self.lin_thresh)) or 1.0      # nothing saturates
+        else:
+            self.show = raw
+            m = float(np.percentile(v, percentile)) if v.size else 1.0
+            self.clim = m if m > 0 else 1.0
+
+    def to_value(self, t):
+        """Inverse of the displayed transform (for colour-bar tick labels)."""
+        t = np.asarray(t, float)
+        return np.sign(t) * self.lin_thresh * (10.0 ** np.abs(t) - 1.0) if self.symlog else t
 
     @property
     def valid(self) -> np.ndarray:

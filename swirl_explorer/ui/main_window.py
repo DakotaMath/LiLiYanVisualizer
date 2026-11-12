@@ -38,13 +38,20 @@ class MainWindow(QMainWindow):
         # centre: views (3D, slice, Σ-map arrive in milestones 3-5)
         self.tabs = QTabWidget()
         self.view3d = View3DPanel()
-        self.tabs.addTab(self.view3d, "3D view")
         self.slice_ctrl = SliceController()
         self.slice = SlicePanel(self.slice_ctrl)
         self.view3d.attach_slice(self.slice_ctrl)
         self.slice.sliceReady.connect(self.view3d.set_slice)
         self.view3d.domainChanged.connect(self.slice.set_domain)
-        self.tabs.addTab(self.slice, "Slice plane")
+        self.slice.view_n_btn.clicked.connect(self.view3d.view_along_normal)
+        from PySide6.QtWidgets import QSplitter
+        self.split = QSplitter(Qt.Horizontal)
+        self.split.addWidget(self.view3d)
+        self.split.addWidget(self.slice)
+        self.split.setStretchFactor(0, 1)
+        self.split.setStretchFactor(1, 1)
+        self.split.setChildrenCollapsible(False)
+        self.tabs.addTab(self.split, "3D + slice")
         self.tabs.addTab(_placeholder("Σ-map", "Globality and pole strata on 2D slices of R⁶ (milestone 5)."),
                          "Σ-map")
         # left: parameters + status
@@ -59,17 +66,33 @@ class MainWindow(QMainWindow):
         dl = QDockWidget("Parameters")
         dl.setObjectName("dock_params")
         dl.setWidget(left)
-        dl.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
+        dl.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable
+                       | QDockWidget.DockWidgetClosable)
         self.addDockWidget(Qt.LeftDockWidgetArea, dl)
         # right: stacked ODE plots
         self.plots = PlotsPanel()
         dr = QDockWidget("ODE profiles")
         dr.setObjectName("dock_plots")
         dr.setWidget(self.plots)
-        dr.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
+        dr.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable
+                       | QDockWidget.DockWidgetClosable)
         self.addDockWidget(Qt.RightDockWidgetArea, dr)
+        # the view controls share the right dock area with the profiles (tabs)
+        self.dock3d = QDockWidget("3D controls")
+        self.dock3d.setObjectName("dock_3d")
+        self.dock3d.setWidget(self.view3d.controls)
+        self.dock_slice = QDockWidget("Slice controls")
+        self.dock_slice.setObjectName("dock_slice")
+        self.dock_slice.setWidget(self.slice.controls)
+        for d in (self.dock3d, self.dock_slice):
+            d.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable
+                          | QDockWidget.DockWidgetClosable)
+            self.addDockWidget(Qt.RightDockWidgetArea, d)
+        self.tabifyDockWidget(dr, self.dock3d)
+        self.tabifyDockWidget(self.dock3d, self.dock_slice)
+        self.dock3d.raise_()
         self.setCentralWidget(self.tabs)
-        self._docks = (dl, dr)
+        self._docks = (dl, dr, self.dock3d, self.dock_slice)
         self._docks_sized = False
 
         m = self.menuBar().addMenu("&File")
@@ -83,6 +106,13 @@ class MainWindow(QMainWindow):
         q.triggered.connect(self.close)
         m.addAction(q)
         vm = self.menuBar().addMenu("&View")
+        self.act_slice = QAction("Slice plane beside the 3D view", self, checkable=True, checked=True)
+        self.act_slice.toggled.connect(self.slice.setVisible)
+        self.act_slice.toggled.connect(self.dock_slice.setVisible)
+        vm.addAction(self.act_slice)
+        for d in self._docks:
+            vm.addAction(d.toggleViewAction())
+        vm.addSeparator()
         for text, mode in (("Dark theme", "dark"), ("Light theme", "light")):
             a = QAction(text, self)
             a.triggered.connect(lambda _=False, m=mode: self.set_theme(m))
@@ -138,7 +168,9 @@ class MainWindow(QMainWindow):
         super().showEvent(ev)
         if not self._docks_sized:
             from PySide6.QtCore import QTimer
-            QTimer.singleShot(0, lambda: self.resizeDocks(list(self._docks), [330, 380], Qt.Horizontal))
+            QTimer.singleShot(0, lambda: self.resizeDocks([self._docks[0], self._docks[1]], [330, 360],
+                                                          Qt.Horizontal))
+            QTimer.singleShot(50, lambda: self.split.setSizes([10000, 10000]))   # 3D and slice equally wide
             self._docks_sized = True
 
     def closeEvent(self, ev):
