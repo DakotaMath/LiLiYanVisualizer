@@ -4,3 +4,5 @@ __pycache__/
 build/
 dist/
 *.mp4
+.venv-build/
+build_log*.txt

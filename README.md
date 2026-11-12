@@ -5,7 +5,7 @@ solutions of the stationary Navier–Stokes equations in R³ \ {axis}. It follow
 monograph *Axisymmetric (−1)-homogeneous solutions of the stationary Navier–Stokes
 equations with swirl*, which is in `docs/`.
 
-**Status:** milestones 1 to 6 are done.
+**Status:** milestones 1 to 7 are done.
 
 - Milestone 1: core solver, pole diagnostics, regression tests.
 - Milestone 2: the Qt shell, with the parameter panel, the live status and stacked
@@ -46,7 +46,8 @@ equations with swirl*, which is in `docs/`.
     or by typing into the table. The path between them is linear or a spline, and
     keyframes can also store the camera, the slice plane and the seeds.
   - Every frame is checked in the background. The timeline shows green (global),
-    teal (global with an R/L1/L2 pole) or red (not global). Events (leaving or
+    teal (global with an R/L1/L2 pole), grey (a pole fails the terminal test) or
+    olive (blows up before a pole), as on the Σ-map. Events (leaving or
     re-entering the global set, a pole changing type) are listed with their time,
     located between frames by bisection. The path is drawn on the Σ-map too.
   - Play or scrub to preview: the 3D view, slice and profiles follow.
@@ -57,13 +58,53 @@ equations with swirl*, which is in `docs/`.
   - **File → Save / Open session** writes everything to one JSON file: the data,
     3D settings, camera, plane, slice and plot options, the Σ-map and the path.
 
-Windows packaging comes next.
+- Milestone 7: the Windows build (see below).
 
-Start the app with:
+Effective coordinates and continuation (milestone 8) come later.
+
+## Running it
+
+From source (Python 3.11 or newer):
+
+```bash
+pip install -r requirements.txt
+```
 
 ```bash
 python -m swirl_explorer
 ```
+
+`python -m swirl_explorer session.json` opens a saved session; `--version` prints the
+version; `--selftest DIR` runs the end-to-end check described below.
+
+### Windows build
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\build_windows.ps1
+```
+
+The script:
+
+1. makes a clean virtual environment in `.venv-build` and installs `requirements.txt`
+   and PyInstaller (`-UseCurrentPython` skips this);
+2. runs the tests (`-SkipTests` skips them);
+3. builds `dist\SwirlExplorer\SwirlExplorer.exe` from `packaging\SwirlExplorer.spec`
+   (a one-folder build);
+4. runs the frozen app's **self-test** (`-SkipSelfTest` skips it). A window appears for
+   about 15 s while it checks the solver, a Σ-map on worker processes, a path scan,
+   the 3D view, an MP4 export and a session round trip. The report goes to
+   `build\selftest\selftest.txt`;
+5. zips the folder to `dist\SwirlExplorer-<version>-win64.zip`.
+
+To share it, send the zip. The recipient unzips it anywhere and runs
+`SwirlExplorer.exe`; nothing needs to be installed.
+
+- **Size:** the folder is about 650 MB (zip about 225 MB). Most of it is VTK (about
+  290 MB), the ffmpeg binary for MP4 export (100 MB) and Qt (100 MB).
+- **SmartScreen:** the exe is not code-signed, so Windows shows "Windows protected your
+  PC" the first time it runs. Click **More info → Run anyway**.
+- **OpenGL:** the 3D view needs it. Without a GPU driver (some virtual machines) Qt
+  falls back to the bundled software renderer, which is slow.
 
 ## The mathematics in one page
 
