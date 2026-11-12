@@ -103,11 +103,12 @@ class NumericScene:
     timings: dict = field(default_factory=dict)
 
 
-def compute_numeric(sol: Solution, s: SceneSettings) -> NumericScene:
-    """Worker-thread part: interpolation tables, seeds, line tracing, grid sampling (NumPy only)."""
+def compute_numeric(sol: Solution, s: SceneSettings, fi: FieldInterpolator | None = None) -> NumericScene:
+    """Worker-thread part: interpolation tables, seeds, line tracing, grid sampling (NumPy only).
+    ``fi`` may be passed in to reuse the interpolation tables of the same solution."""
     t0 = time.perf_counter()
     dom = Domain(R=1.0, r_min=s.r_min, axis_a=s.axis_a, shape=s.domain_shape)
-    fi = FieldInterpolator(sol, dxi=0.002, fast=True)
+    fi = fi if fi is not None else FieldInterpolator(sol, dxi=0.002, fast=True)
     seeds = make_seeds(s)
     num = NumericScene(settings=s, domain=dom, fi=fi, seeds=seeds)
     tm = num.timings

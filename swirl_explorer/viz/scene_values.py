@@ -55,7 +55,12 @@ def colour_spec(values: np.ndarray, which: str) -> dict:
 
 
 def outline_lines(domain: Domain) -> list[np.ndarray]:
-    """The equator and the meridian in the plane y = 0 (the cut plane): enough to read the ball."""
+    """The equator and the meridian in the plane y = 0 (the cut plane): enough to read the ball;
+    for the box region, its twelve edges."""
+    if domain.shape == "box":
+        R = domain.R
+        c = np.array([[x, y, z] for x in (-R, R) for y in (-R, R) for z in (-R, R)])
+        return [c[[i, j]] for i in range(8) for j in range(i + 1, 8) if np.sum(c[i] != c[j]) == 1]
     t = np.linspace(0, 2 * np.pi, 145)
     eq = np.column_stack([domain.R * np.cos(t), domain.R * np.sin(t), np.zeros_like(t)])
     mer = np.column_stack([domain.R * np.cos(t), np.zeros_like(t), domain.R * np.sin(t)])
@@ -118,3 +123,52 @@ def swirl_arc_points(fi: FieldInterpolator) -> list[tuple[np.ndarray, str]]:
         arc = np.column_stack([rho * np.cos(ph), rho * np.sin(ph), np.full_like(ph, z)])
         out.append((arc, "counter-clockwise" if sgn > 0 else "clockwise"))
     return out
+
+
+def legend_items(data, s, cs, overlays, show_handle=False, slice_shown=False) -> list[str]:
+    """The "What you see" lines (HTML), shared by the desktop 3D view and the browser version.
+    `data` needs n_lines, surface, iso, iso_level, vortex, glyphs, selfsim, swirl_arcs."""
+    import matplotlib
+    from . import style
+    from .scene3d_colors import COLOR_BY, ISO_FIELDS
+    P = style.c()
+    sw = "<span style='color:{c};font-size:15px'>■</span>&nbsp;"
+    cm = matplotlib.colormaps[cs["cmap"]] if isinstance(cs["cmap"], str) else cs["cmap"]
+    ramp = "".join(f"<span style='color:{matplotlib.colors.to_hex(cm(t))};font-size:15px'>■</span>"
+                   for t in (0.05, 0.35, 0.65, 0.95)) + "&nbsp;"
+    items = []
+    if s.show_streamlines:
+        if overlays:
+            items.append(sw.format(c=P["outline"]) + f"streamlines of u ({data.n_lines}), dimmed "
+                         "while vortex lines / rescalings are shown")
+        else:
+            items.append(ramp + f"streamlines of u ({data.n_lines}), coloured by "
+                         f"{COLOR_BY[s.color_by]} (colour bar); small cones point downstream")
+    if s.show_surface and data.surface is not None:
+        items.append(ramp + f"stream surface (translucent), coloured by {COLOR_BY[s.color_by]}")
+    if s.show_iso and data.iso is not None:
+        items.append(sw.format(c="#9fb3c8") + f"isosurface {ISO_FIELDS[s.iso_field]} = {data.iso_level:.3g}")
+    if s.show_vortex and data.vortex is not None:
+        items.append(sw.format(c="#2e9d3a") + "vortex lines (curves along ω)")
+    if s.show_glyphs and data.glyphs is not None:
+        items.append(sw.format(c=P["view_text"]) + "arrows: direction of u; length grows with log |u|")
+    if s.show_selfsim and data.selfsim:
+        items.append(sw.format(c=P["view_text"]) + "thick: one streamline X(s); thin: its rescalings λX "
+                     "(labelled), also streamlines since u is (−1)-homogeneous")
+    if show_handle:
+        items.append(sw.format(c="#d81b60") + ("magenta handle: drag it; its distance from the axis is the "
+                                                 "ring radius" if s.seed_mode in ("rings", "ring") else
+                                                 "magenta ball: drag to move the seeds, handles resize"))
+    items.append(sw.format(c=STRATUM_COLORS["G"]) + "axis coloured by pole type (blue G, red R, amber L1, "
+                 "purple L2); big cone = direction of the flow along the axis · " + sw.format(c="#9a9ca3")
+                 + f"cut-outs: ball r &lt; {s.r_min:g} around 0, cylinder ρ &lt; {s.axis_a:g} around the axis"
+                 + (" · near half y &lt; 0 cut away" if s.clip else ""))
+    if data.swirl_arcs:
+        items.append(sw.format(c="#e65100") + "orange arcs: sense of the swirl u_φ near each pole")
+    items.append(sw.format(c=P["origin"]) + "grey ball: origin cut out (u ~ 1/|X| is singular there)")
+    if slice_shown:
+        items.append("<span style='color:#b2182b;font-size:15px'>■</span><span style='color:#2166ac;"
+                     "font-size:15px'>■</span>&nbsp;slice plane: red = flow through it toward +n, blue = "
+                     "against n; dark lines = in-plane streamlines")
+    items.append(sw.format(c=P["outline"]) + "thin ellipses: equator and cut-plane meridian of |X| = 1")
+    return items

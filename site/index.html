@@ -107,7 +107,7 @@
         <label class="chk" title="overlay predicted pole limits / rates (dashed)"><input id="pl-overlay" type="checkbox" checked> predictions</label>
         <button id="pl-pin" title="keep the current solution as a comparison curve">Pin current</button>
         <button id="pl-clear">Clear pins</button>
-        <button id="pl-export" title="download the plot as PNG">Export PNG</button>
+        <select id="pl-export" title="download the plot"><option value="">Export ▾</option><option value="png">PNG…</option><option value="svg">SVG…</option><option value="csv">CSV…</option></select>
         <span id="pl-pins" class="muted"></span>
       </div>
       <img id="profiles-img" alt="ODE profiles">
@@ -116,7 +116,7 @@
     <div id="rtab-ctl3d" class="rpage" hidden>
       <section class="group"><h3>What you see</h3><div id="legend3d" class="legend"></div></section>
       <section class="group">
-        <h3>Seeds</h3>
+        <h3>Seeds (type the centre; the desktop app adds a drag handle)</h3>
         <div class="form">
           <label>seed shape <select id="s-seed_mode">
             <option value="rings">rings at 5 heights</option><option value="ring">one ring around the axis</option>
@@ -144,12 +144,13 @@
         <p class="muted small">Arrows and isosurfaces are in the desktop app only.</p>
       </section>
       <section class="group">
-        <h3>Slice plane</h3>
+        <h3>Slice plane (see Slice controls)</h3>
         <label class="chk" title="the plane coloured by u·n with its in-plane streamlines"><input id="s-show_slice" type="checkbox"> show the slice plane here</label>
       </section>
       <section class="group">
         <h3>Region</h3>
         <div class="form">
+          <label>shape <select id="s-shape"><option value="ball">ball |X| ≤ 1</option><option value="box">box |X|∞ ≤ 1</option></select></label>
           <label title="excluded ball around the origin (u ~ 1/r)">origin cut-out r <input id="s-r_min" type="number" step="0.02" min="0.01" max="0.8" value="0.12"></label>
           <label title="excluded cylinder around the axis (u singular there)">axis cut-out ρ <input id="s-axis_a" type="number" step="0.005" min="0.002" max="0.3" value="0.025"></label>
           <label>surface opacity <input id="s-opacity" type="range" min="5" max="100" value="45"></label>
@@ -167,15 +168,16 @@
         <h3>Plane orientation</h3>
         <div id="sl-presets" class="col"></div>
         <div class="form">
-          <label>azimuth <span class="slide"><input id="sl-az" type="range" min="-180" max="180" step="1"><input id="sl-az-n" type="number" step="1" min="-180" max="180"></span></label>
-          <label>elevation <span class="slide"><input id="sl-el" type="range" min="-90" max="90" step="1"><input id="sl-el-n" type="number" step="1" min="-90" max="90"></span></label>
-          <label>offset <span class="slide"><input id="sl-off" type="range" min="-0.95" max="0.95" step="0.01"><input id="sl-off-n" type="number" step="0.01" min="-0.95" max="0.95"></span></label>
+          <label>azimuth <span class="slide"><input id="sl-az" type="range" min="-180" max="180" step="1" title="azimuth of the normal (degrees, from +x toward +y)"><input id="sl-az-n" type="number" step="1" min="-180" max="180"></span></label>
+          <label>elevation <span class="slide"><input id="sl-el" type="range" min="-90" max="90" step="1" title="elevation of the normal above the equator (degrees)"><input id="sl-el-n" type="number" step="1" min="-90" max="90"></span></label>
+          <label>offset <span class="slide"><input id="sl-off" type="range" min="-0.95" max="0.95" step="0.01" title="offset of the plane from the origin along its normal"><input id="sl-off-n" type="number" step="0.01" min="-0.95" max="0.95"></span></label>
         </div>
         <p id="sl-normal" class="muted small"></p>
       </section>
       <section class="group">
         <h3>Show on the plane</h3>
         <div class="col">
+          <label class="chk"><input id="sl-un" type="checkbox" checked> colour: normal velocity u·n</label>
           <label class="chk" title="plot ρ·(u·n): removes the 1/ρ blow-up at the axis so the rest is visible"><input id="sl-rho" type="checkbox"> scale by ρ (distance to the axis)</label>
           <label class="chk" title="colour by sign(v)·log(1 + |v|/v₀): shows small and very large values together"><input id="sl-log" type="checkbox"> signed-log colour scale</label>
           <label class="chk"><input id="sl-lines" type="checkbox" checked> streamlines of the in-plane flow</label>
@@ -184,6 +186,7 @@
         </div>
       </section>
       <button id="sl-view-n" title="look at the 3D view from the same side as this slice">Point the 3D camera along n</button>
+      <label class="chk" title="re-aim the 3D camera along n whenever the plane changes"><input id="sl-follow" type="checkbox"> 3D camera follows the slice</label>
       <button id="sl-export">Export PNG</button>
     </div>
 
@@ -225,14 +228,14 @@
           <button id="pa-set" title="overwrite the selected keyframe's values with the current solution (and the stored view, if ticked)">Overwrite with current</button>
           <button id="pa-del">Remove</button>
           <button id="pa-clear">Clear</button>
-          <label>between keyframes: <select id="pa-interp"><option value="linear">linear</option><option value="spline">spline</option></select></label>
+          <label title="how the six data move between keyframes (spline needs three or more)">between keyframes: <select id="pa-interp"><option value="linear">linear</option><option value="spline">spline</option></select></label>
         </div>
         <div class="row wrap"><span>keyframes also store:</span>
-          <label class="chk"><input id="pa-k-camera" type="checkbox"> camera</label>
-          <label class="chk"><input id="pa-k-plane" type="checkbox"> slice plane</label>
-          <label class="chk"><input id="pa-k-seeds" type="checkbox"> seeds</label>
+          <label class="chk" title="the 3D camera moves between keyframes; when off it stays where it is"><input id="pa-k-camera" type="checkbox"> camera</label>
+          <label class="chk" title="the slice plane turns / moves between keyframes; when off it stays where it is"><input id="pa-k-plane" type="checkbox"> slice plane</label>
+          <label class="chk" title="the streamline seeds move between keyframes; when off it stays where it is"><input id="pa-k-seeds" type="checkbox"> seeds</label>
         </div>
-        <div class="table-wrap"><table id="pa-table"><thead></thead><tbody></tbody></table></div>
+        <div class="table-wrap" title="click a value to type it; selecting a row moves to that keyframe; bold '(varies)': the data that change along the path"><table id="pa-table"><thead></thead><tbody></tbody></table></div>
       </div>
       <div class="path-right">
         <div class="row wrap">
@@ -275,8 +278,10 @@
   <p>This is the browser version of the Swirl Explorer desktop app. The same Python code (solver, pole
     diagnostics, plots) runs in your browser through Pyodide; nothing is sent to a server. It is about
     4–5 times slower than the desktop app, and the Σ-map is shared between several background workers.</p>
-  <p>Differences from the desktop app: no draggable seed or plane handles (type the values), no arrows or
-    isosurfaces in 3D, and video recording (WebM/MP4 of the 3D view) instead of the composited MP4 export.</p>
+  <p>Differences from the desktop app: no draggable seed or plane handles (type the values), no arrow glyphs or
+    isosurfaces in 3D, video recording (WebM/MP4 of the 3D view with the caption strip) instead of the composited
+    MP4 export, and a 61 × 61 default Σ-map grid (the desktop uses 101 × 101).</p>
+  <p>Keyboard: Ctrl+O opens a session, Ctrl+S saves one.</p>
   <form method="dialog"><button>Close</button></form>
 </dialog>
 
@@ -284,8 +289,8 @@
   <form method="dialog">
     <h3>Landau family</h3>
     <label>λ<sub>L</sub> (|λ<sub>L</sub>| ≥ 1 is global; U = 2(1−x²)/(λ<sub>L</sub>+x)):
-      <input id="landau-L" type="number" step="0.1" value="1.5"></label>
-    <div class="row"><button value="cancel">Cancel</button><button id="landau-ok" value="ok" class="primary">OK</button></div>
+      <input id="landau-L" type="number" step="0.1" value="1.5" min="-100" max="100"></label>
+    <div class="row"><button id="landau-ok" value="ok" class="primary">OK</button><button value="cancel" formnovalidate>Cancel</button></div>
   </form>
 </dialog>
 

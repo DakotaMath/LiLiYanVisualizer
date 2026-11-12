@@ -177,7 +177,7 @@ class SigmaMapPanel(QWidget):
         self.chk_edge = QCheckBox("edge of the global region")
         self.chk_edge.setChecked(True)
         self.chk_mu = QCheckBox("μ contours on this view (north white, south amber)")
-        self.chk_mu.setToolTip("μ = ½ dotted, ⅔ dashed, 1 solid; always shown in the exponent view")
+        self.chk_mu.setToolTip("μ = ½ dotted, ⅔ dashed, 1 dash-dot; always shown in the exponent view")
         self.chk_mu.setChecked(False)
         for w in (self.chk_edge, self.chk_mu):
             w.toggled.connect(lambda _: self.redraw())

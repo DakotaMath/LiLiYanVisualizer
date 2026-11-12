@@ -219,6 +219,16 @@ export class PathDock {
 
   tip(ev) {
     if (this.path.keyframes.length < 2) return;
+    const r = this.canvas.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
+    const [t0, t1] = this.duration(), span = (t1 - t0) || 1, X = (f) => 8 + f * (r.width - 16);
+    const names = { leaves_global: "leaves the global set", enters_global: "back in the global set",
+                    stratum_change: "a pole changes type", failure_change: "not global, now" };
+    for (const e of this.events) {
+      if (Math.abs(X((e.t - t0) / span) - x) < 6) { this.canvas.title = `event at t = ${m(e.t)}: ${names[e.kind] || e.kind} ${e.detail.replace(/->/g, "→")}`; return; }
+    }
+    for (const [j, k] of this.path.keyframes.entries()) {
+      if (Math.abs(X((k.t - t0) / span) - x) < 8 && y > 38) { this.canvas.title = `keyframe ${j + 1} at t = ${m(k.t)}`; return; }
+    }
     const i = this.frameAt(ev), f = this.frames[i];
     this.canvas.title = f ? `frame ${i + 1}, t = ${m(f.t)}: ${f.global ? "global" : "NOT global"}; north ${f.north}, south ${f.south}` : "";
   }
@@ -282,7 +292,7 @@ export class PathDock {
 
   async frameParams(i) {
     if (this.frames[i] && this.frames[i].params) return this.frames[i].params;
-    return await this.py.call("path_at", this.path, this.tOf(i));
+    return await this.schedule("frame", "path_at", [this.path, this.tOf(i)]);
   }
 
   async goto(i) {
@@ -292,6 +302,7 @@ export class PathDock {
     const t = this.tOf(this.index), extras = {};
     for (const k of EXTRA) { const e = this.extraAt(t, k); if (e) extras[k] = e; }
     const p = await this.frameParams(this.index);
+    if (!p) return;                                   // superseded by a later frame
     this.applyExtras(extras);
     this.setParams(p);
   }
@@ -315,7 +326,7 @@ export class PathDock {
     if (!ks.length) return null;
     const n = this.n();
     const kind = this.frames.length === n ? this.frames.map((f) => (f.global ? "ok" : f.kind)) : null;
-    return { path: this.path, n, kind, event_t: kind ? this.events.map((e) => e.t) : [] };
+    return { path: this.path, n, kind, event_t: kind ? this.events.map((e) => e.t) : [], index: this.index };
   }
 
   // ------------------------------------------------------------ video: the 3D view along the path
@@ -334,9 +345,11 @@ export class PathDock {
     const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8e6 });
     const chunks = []; rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     this.recording = true; this.play(false);
+    this.S.show3d();                                   // the 3D view must be live while recording
     const btn = this.$("pa-video"); btn.textContent = "Recording… (click to stop)";
     let stop = false; btn.disabled = false; btn.onclick = () => { stop = true; };
     rec.start();
+    rec.pause();
     const frameMs = 1000 / fps;
     let last = null, held = 0;
     for (let i = 0; i < n && !stop; i++) {
@@ -344,7 +357,6 @@ export class PathDock {
       await this.waitIdle();
       const f = this.frames[i];
       const ok = !f || f.global;
-      const t0 = performance.now();
       if (ok || !last) {
         view.renderNow();
         g.fillStyle = "#101114"; g.fillRect(0, 0, W, H);
@@ -355,12 +367,15 @@ export class PathDock {
         g.fillStyle = "rgba(0,0,0,0.5)"; g.fillRect(0, 0, W, src.height);
       }
       this.caption(g, W, H, cap, i, f, !ok ? (last ? "HELD · last global frame" : "NOT GLOBAL") : "");
+      rec.resume();                                   // the frame is on the timeline for exactly 1/fps
       track.requestFrame();
-      const wait = frameMs - (performance.now() - t0);
-      await new Promise((r) => setTimeout(r, Math.max(wait, 15)));
+      await new Promise((r) => setTimeout(r, frameMs));
+      rec.pause();
     }
+    if (rec.state === "paused") rec.resume();
+    const stopped = new Promise((r) => (rec.onstop = r));
     rec.stop();
-    await new Promise((r) => (rec.onstop = r));
+    await stopped;
     const ext = mime.startsWith("video/mp4") ? "mp4" : "webm";
     const url = URL.createObjectURL(new Blob(chunks, { type: mime.split(";")[0] }));
     const a = document.createElement("a"); a.href = url; a.download = `swirl_path.${ext}`; a.click();

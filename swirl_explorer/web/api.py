@@ -34,6 +34,10 @@ from ..viz.scene_values import (scalar_values, colour_spec, outline_lines, axis_
 from ..viz.status_text import head_html, pole_line  # noqa: E402
 
 _S: dict = {"p": None, "sol": None, "sm": None, "pins": [], "sigma": None}
+QUANTITY_TIPS = {"U": "U = u_θ sin θ, meridional circulation", "f": "f = u_φ sin θ, swirl",
+                 "Q": "potential Q: (1−x²)U_x + 2xU + U²/2 = Q", "z": "positive solution of z'' = W z (z(0) = 1)",
+                 "W": "Schrödinger potential W = 1 + Q/2", "h": "h = z'/z = U/2 + x",
+                 "u_r": "radial velocity profile u_r = U_x", "u_theta": "u_θ = U / sin θ", "u_phi": "u_φ = f / sin θ"}
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -75,14 +79,14 @@ def info() -> dict:
         "start": Params(gamma=-1.6806045, kappa=1.0).to_dict(),
         "params": [{"name": n, "label": PARAM_UI[n][0], "tip": PARAM_UI[n][1], "range": DEFAULT_RANGES[n]}
                    for n in PARAM_NAMES],
-        "quantities": [{"key": k, "label": lab} for k, lab in (
+        "quantities": [{"key": k, "label": lab, "tip": QUANTITY_TIPS[k]} for k, lab in (
             ("U", "U"), ("f", "f"), ("Q", "Q"), ("z", "z"), ("W", "W = 1+Q/2"), ("h", "h = z′/z"),
             ("u_r", "u_r"), ("u_theta", "u_θ"), ("u_phi", "u_φ"))],
-        "xvars": [{"key": "xi", "label": "ξ = artanh x"}, {"key": "x", "label": "x = cos θ"},
-                  {"key": "theta", "label": "θ (degrees)"}, {"key": "s_north", "label": "s = −ln(1−x) (north)"},
-                  {"key": "s_south", "label": "s = −ln(1+x) (south)"}],
+        "xvars": [{"key": "s_north", "label": "s = −ln(1−x)  (north)"}, {"key": "s_south", "label": "s = −ln(1+x)  (south)"},
+                  {"key": "x", "label": "x = cos θ"}, {"key": "theta", "label": "θ (degrees)"},
+                  {"key": "xi", "label": "ξ = artanh x"}],
         "modes": [{"key": "linear", "label": "linear"}, {"key": "log", "label": "log |·|"},
-                  {"key": "loglog", "label": "log–log near a pole"}],
+                  {"key": "loglog", "label": "log–log near pole"}],
         "color_by": [{"key": k, "label": v} for k, v in COLOR_BY.items()],
         "presets": [{"key": k, "label": lab, "tip": tip} for k, lab, tip in (
             ("rest", "Rest state", "c = 0, γ = A = κ = 0: U ≡ 0, no flow"),
@@ -149,12 +153,12 @@ def solve(pdict: dict) -> dict:
 
 # ----------------------------------------------------------------------------- profile plots
 def pin() -> int:
-    if _S["sol"] is not None and len(_S["pins"]) < len(PIN_COLORS):
+    if _S["sol"] is not None:
         p = _S["p"]
         names = {"c1": "c₁", "c2": "c₂", "c3": "c₃", "gamma": "γ", "A": "A", "kappa": "κ"}
         parts = [f"{names[k]}={v:.4g}" for k, v in zip(names, p.as_tuple()) if v != 0.0]
         lab = (f"pin {len(_S['pins']) + 1}: " + (", ".join(parts) or "rest state")).replace("-", "−")
-        _S["pins"].append(Curve(lab, _S["sol"], _S["sm"], PIN_COLORS[len(_S["pins"])], pinned=True))
+        _S["pins"].append(Curve(lab, _S["sol"], _S["sm"], PIN_COLORS[len(_S["pins"]) % len(PIN_COLORS)], pinned=True))
     return len(_S["pins"])
 
 
@@ -163,17 +167,44 @@ def clear_pins() -> int:
     return 0
 
 
+def _curves():
+    from ..viz.plots2d import CURRENT
+    return list(_S["pins"]) + [Curve("current", _S["sol"], _S["sm"], CURRENT)]
+
+
 def profiles(opts: dict) -> dict:
+    """The stacked ODE profiles (viz.plots2d.draw_profiles): PNG for the page, or SVG / CSV to download."""
     if _S["sol"] is None:
         return {"png": ""}
-    from ..viz.plots2d import CURRENT
-    fig, dpi = _figure(opts.get("w", 600), opts.get("h", 700), opts.get("ratio", 1.0))
-    curves = list(_S["pins"]) + [Curve("current", _S["sol"], _S["sm"], CURRENT)]
     q = [k for k in opts.get("quantities", ["U", "f", "Q"]) if k in QUANTITIES] or ["U"]
-    xvar = opts.get("xvar", "xi")
-    draw_profiles(fig, curves, q, xvar=xvar if xvar in XVARS else "xi", mode=opts.get("mode", "linear"),
+    xvar = opts.get("xvar", "xi") if opts.get("xvar", "xi") in XVARS else "xi"
+    fmt = opts.get("format", "png")
+    if fmt == "csv":
+        import tempfile, os
+        from ..viz.plots2d import export_csv
+        fd, path = tempfile.mkstemp(suffix=".csv")
+        os.close(fd)
+        export_csv(path, _curves(), q, xvar)
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        os.remove(path)
+        return {"csv": text}
+    fig, dpi = _figure(opts.get("w", 600), opts.get("h", 700), opts.get("ratio", 1.0))
+    draw_profiles(fig, _curves(), q, xvar=xvar, mode=opts.get("mode", "linear"),
                   pole=opts.get("pole", "north"), overlay=bool(opts.get("overlay", True)))
+    if fmt == "svg":
+        buf = io.StringIO()
+        fig.savefig(buf, format="svg", facecolor=fig.get_facecolor())
+        return {"svg": buf.getvalue()}
     return {"png": _png(fig, dpi)}
+
+
+def _fi():
+    """The interpolation tables of the current solution (built once per solution)."""
+    from ..core.fields import FieldInterpolator
+    if _S.get("fi_of") is not _S["sol"]:
+        _S["fi"], _S["fi_of"] = FieldInterpolator(_S["sol"], dxi=0.002, fast=True), _S["sol"]
+    return _S["fi"]
 
 
 # ----------------------------------------------------------------------------- 3D scene
@@ -208,7 +239,16 @@ def scene(settings: dict) -> dict:
     from ..viz.streamlines import stream_surface
     t0 = time.perf_counter()
     s = SceneSettings.from_dict(settings)
-    num = compute_numeric(_S["sol"], s)
+    # tracing depends on the solution, the seeds, the region and the layers; colour, opacity and the
+    # cut-away do not, so changing those reuses the traced lines
+    key = (s.seed_mode, s.n_seeds, tuple(s.sphere_center), s.sphere_radius, tuple(s.line_p0),
+           tuple(s.line_p1), s.show_streamlines, s.show_surface, s.show_vortex, s.show_selfsim, s.domain_shape,
+           s.r_min, s.axis_a)
+    if _S.get("num_key") == key and _S.get("num_of") is _S["sol"]:
+        num = _S["num"]
+    else:
+        num = compute_numeric(_S["sol"], s, fi=_fi())
+        _S["num_key"], _S["num"], _S["num_of"] = key, num, _S["sol"]
     fi, dom = num.fi, num.domain
     traced = num.traced.lines if num.traced is not None else []
     surf = None
@@ -217,7 +257,7 @@ def scene(settings: dict) -> dict:
         if len(quads):
             surf = (SP, quads)
     # one colour scale over everything that is colour-mapped (as the desktop: lines, surface, vortex)
-    vals = [scalar_values(fi, np.vstack(traced), s.color_by)] if traced else []
+    vals = [scalar_values(fi, np.vstack(traced), s.color_by)] if traced and s.show_streamlines else []
     if surf is not None:
         vals.append(scalar_values(fi, surf[0], s.color_by))
     if s.show_vortex and num.vortex_traced is not None and num.vortex_traced.lines:
@@ -254,39 +294,16 @@ def scene(settings: dict) -> dict:
                        "stops": [matplotlib.colors.to_hex(cmap(t)) for t in np.linspace(0, 1, 9)]}
     out["n_lines"] = len(traced)
     out["stops"] = {k: v for k, v in sorted(getattr(num.traced, "stop_reasons", {}).items())} if num.traced else {}
-    out["legend"] = _legend(out, s, cs, overlays)
+    from types import SimpleNamespace
+    from ..viz.scene_values import legend_items
+    stand_in = SimpleNamespace(n_lines=len(traced), surface=surf, iso=None, iso_level=float("nan"),
+                               vortex=num.vortex_traced if s.show_vortex else None, glyphs=None,
+                               selfsim=num.selfsim if s.show_selfsim else [], swirl_arcs=out["arcs"])
+    out["legend"] = legend_items(stand_in, s, cs, overlays, show_handle=False,
+                                 slice_shown=bool(settings.get("_slice_shown")))
+    out["coloured"] = bool((s.show_streamlines and not overlays) or surf is not None)
     out["ms"] = 1e3 * (time.perf_counter() - t0)
     return out
-
-
-def _legend(out: dict, s, cs, overlays) -> list[dict]:
-    """The 'what you see' list: one entry per element, each with its colour swatch(es)."""
-    ramp = out["colorbar"]["stops"][1::2]
-    items = []
-    if s.show_streamlines:
-        if overlays:
-            items.append({"colors": [style.c()["outline"]], "text": f"streamlines of u ({out['n_lines']}), dimmed "
-                          "while vortex lines / rescalings are shown"})
-        else:
-            items.append({"colors": ramp, "text": f"streamlines of u ({out['n_lines']}), coloured by "
-                          f"{COLOR_BY[s.color_by]} (colour bar); small cones point downstream"})
-    if "surface" in out:
-        items.append({"colors": ramp, "text": f"stream surface (translucent), coloured by {COLOR_BY[s.color_by]}"})
-    if "vortex" in out:
-        items.append({"colors": ["#2e9d3a"], "text": "vortex lines (curves along ω)"})
-    if "selfsim" in out:
-        items.append({"colors": [style.c()["view_text"]], "text": "thick: one streamline X(s); thin: its rescalings "
-                      "λX = 0.6X, 0.8X, 1.25X, also streamlines since u is (−1)-homogeneous"})
-    items.append({"colors": [STRATUM_COLORS["G"], STRATUM_COLORS["R"], STRATUM_COLORS["L1"]],
-                  "text": "axis coloured by pole type (blue G, red R, amber L1, purple L2); the cone shows the "
-                          "direction of the flow along the axis"})
-    if out["arcs"]:
-        items.append({"colors": ["#e65100"], "text": "orange arcs: sense of the swirl u_φ near each pole"})
-    items.append({"colors": [style.c()["origin"]], "text": f"grey ball: origin cut out (u ~ 1/|X| is singular there); "
-                  f"cut-outs: ball r < {s.r_min:g} around 0, cylinder ρ < {s.axis_a:g} around the axis"
-                  + (" · near half y < 0 cut away" if s.clip else "")})
-    items.append({"colors": [style.c()["outline"]], "text": "thin circles: equator and meridian of |X| = 1"})
-    return items
 
 
 # ----------------------------------------------------------------------------- slice
@@ -300,16 +317,16 @@ def slice_view(plane: dict, opts: dict) -> dict:
     from ..viz.slice_plot import draw_slice
     t0 = time.perf_counter()
     spec = PlaneSpec.from_dict({**plane, "n": int(opts.get("n", 121))})
-    dom = Domain(R=1.0, r_min=float(opts.get("r_min", 0.12)), axis_a=float(opts.get("axis_a", 0.025)))
-    fi = FieldInterpolator(_S["sol"], dxi=0.002, fast=True)
-    data = sample_plane(fi, spec, dom)
+    dom = Domain(R=1.0, r_min=float(opts.get("r_min", 0.12)), axis_a=float(opts.get("axis_a", 0.025)),
+                 shape=opts.get("shape", "ball"))
+    data = sample_plane(_fi(), spec, dom)
     if opts.get("lic"):
         data.lic = lic(data.us, data.ut)
     lines = projected_streamlines(data, density=float(opts.get("density", 1.4)) * (0.5 if opts.get("lic") else 1.0)) \
         if opts.get("lines", True) else []
     data.set_display(bool(opts.get("rho")), bool(opts.get("log")))
     fig, dpi = _figure(opts.get("w", 520), opts.get("h", 640), opts.get("ratio", 1.0))
-    draw_slice(fig, data, lines, dom, show_colour=True)
+    draw_slice(fig, data, lines, dom, show_colour=bool(opts.get("un", True)))
     # the same colours as a small texture for the plane in 3D
     import matplotlib.colors as mc
     m = data.clim
@@ -420,7 +437,8 @@ def _path_overlay(d: dict) -> dict | None:
     samples = path.at(np.linspace(*path.duration, n))
     kind = d.get("kind")
     return {"keys": [k.params for k in path.keyframes], "samples": samples,
-            "kind": kind if kind and len(kind) == n else None, "cur": None,
+            "kind": kind if kind and len(kind) == n else None,
+            "cur": samples[int(d["index"])] if d.get("index") is not None and 0 <= int(d["index"]) < n else None,
             "events": [path.at(t)[0] for t in d.get("event_t", [])], "varying": path.varying()}
 
 

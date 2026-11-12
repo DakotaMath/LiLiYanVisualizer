@@ -6,3 +6,4 @@ COLOR_BY = {"speed": "|u| (log scale)", "u_phi": "u_φ (swirl velocity)", "helic
             "pressure": "pressure p"}
 VTK_TITLES = {"speed": "speed (log scale)", "u_phi": "swirl velocity",
               "helicity": "helicity", "pressure": "pressure"}
+ISO_FIELDS = {"speed": "|u|", "swirl": "swirl f / sin θ", "helicity": "helicity u·ω"}

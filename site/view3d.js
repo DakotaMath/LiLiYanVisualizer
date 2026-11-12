@@ -3,6 +3,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
+const LIN = new Float32Array(256).map((_, i) => { const c = i / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
+
 export function b64(s, Type) {
   const bin = atob(s);
   const u8 = new Uint8Array(bin.length);
@@ -17,6 +19,9 @@ const PAL = {
 const CLIP = [new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)];   // keeps y ≥ 0, as the desktop's clip
 export const OBLIQUE = { position: [2.7, -2.9, 2.4], focal_point: [0, 0, 0], view_up: [0, 0, 1] };
 export const POLE = { position: [0, 0, 6], focal_point: [0, 0, 0], view_up: [0, 1, 0] };
+const halfDiag = (b) => 0.5 * Math.hypot(b[1] - b[0], b[3] - b[2], b[5] - b[4]);
+export const SCENE_R = halfDiag([-1.1, 1.1, -1.1, 1.1, -1.3, 1.3]);     // viz/scene_draw.py SCENE_BOUNDS
+export const NORMAL_R = halfDiag([-1.1, 1.1, -1.1, 1.1, -1.2, 1.2]);    // "point the 3D camera along n"
 
 // ---------------------------------------------------------------------------- geometry builders
 function tubes(lines, radius, sides = 10) {
@@ -48,7 +53,7 @@ function tubes(lines, radius, sides = 10) {
       B.crossVectors(T, N);
       prevT.copy(T);
       P.set(p[3 * i], p[3 * i + 1], p[3 * i + 2]);
-      const r = L.cols ? L.cols[3 * i] / 255 : 1, g = L.cols ? L.cols[3 * i + 1] / 255 : 1, bl = L.cols ? L.cols[3 * i + 2] / 255 : 1;
+      const r = L.cols ? LIN[L.cols[3 * i]] : 1, g = L.cols ? LIN[L.cols[3 * i + 1]] : 1, bl = L.cols ? LIN[L.cols[3 * i + 2]] : 1;
       for (let s = 0; s < sides; s++) {
         const th = (2 * Math.PI * s) / sides, c = Math.cos(th), sn = Math.sin(th);
         const nx = c * N.x + sn * B.x, ny = c * N.y + sn * B.y, nz = c * N.z + sn * B.z;
@@ -62,7 +67,7 @@ function tubes(lines, radius, sides = 10) {
       for (let s = 0; s < sides; s++) {
         const a = base + i * sides + s, b = base + i * sides + ((s + 1) % sides);
         const c = a + sides, d = b + sides;
-        idx[f++] = a; idx[f++] = c; idx[f++] = b; idx[f++] = b; idx[f++] = c; idx[f++] = d;
+        idx[f++] = a; idx[f++] = b; idx[f++] = c; idx[f++] = b; idx[f++] = d; idx[f++] = c;   // outward normals
       }
     }
   }
@@ -114,16 +119,28 @@ export class View3D {
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
     this.light = new THREE.DirectionalLight(0xffffff, 1.6);   // a head light, as VTK's
     this.scene.add(this.light);
-    this.controls = new OrbitControls(this.camera, canvas);
-    this.controls.enableDamping = false;
-    this.controls.zoomSpeed = 1.2;
-    this.controls.addEventListener("change", () => this.render());
+    this._makeControls();
     this.groups = { scene: new THREE.Group(), slice: new THREE.Group() };
     this.scene.add(this.groups.scene, this.groups.slice);
     this.labels = [];
     this.halfHeight = 1.25;
+    this.fit = null;                           // {R, zoom} while the view keeps VTK's reset framing
+    this._initAxes();
     new ResizeObserver(() => this.resize()).observe(canvas.parentElement);
     this.setCamera(OBLIQUE, 1.85);
+  }
+
+  _makeControls() {
+    const old = this.controls;
+    const target = old ? old.target.clone() : new THREE.Vector3();
+    if (old) old.dispose();
+    this.controls = new OrbitControls(this.camera, this.canvas);
+    this.controls.enableDamping = false;
+    this.controls.zoomSpeed = 1.2;
+    this.controls.target.copy(target);
+    this.controls.addEventListener("change", () => this.render());
+    this.controls.addEventListener("start", () => { this.fit = null; });
+    this._up = this.camera.up.clone();
   }
 
   resize() {
@@ -138,20 +155,22 @@ export class View3D {
   _frustum() {
     const el = this.canvas.parentElement;
     const a = (el.clientWidth || 1) / (el.clientHeight || 1);
+    if (this.fit) this.halfHeight = (this.fit.R / this.fit.zoom) / Math.min(1, a);
     const H = this.halfHeight;
     Object.assign(this.camera, { left: -H * a, right: H * a, top: H, bottom: -H });
     this.camera.updateProjectionMatrix();
   }
 
   // camera in the desktop's terms: position / focal point / up / parallel scale (half height)
-  setCamera(c, zoom = null) {
+  setCamera(c, zoom = null, R = SCENE_R) {
     const f = new THREE.Vector3(...(c.focal_point || [0, 0, 0]));
     const p = new THREE.Vector3(...c.position);
-    // the desktop resets to the scene bounds and zooms: half height ≈ 1.5 / zoom for the ball
     this.camera.position.copy(p.clone().sub(f).normalize().multiplyScalar(8).add(f));
     this.camera.up.set(...c.view_up);
+    if (!this._up || !this._up.equals(this.camera.up)) this._makeControls();
     this.controls.target.copy(f);
-    this.halfHeight = c.parallel_scale ? c.parallel_scale : 2.3 / (zoom || 1);
+    if (c.parallel_scale) { this.fit = null; this.halfHeight = c.parallel_scale; }
+    else this.fit = { R, zoom: zoom || 1 };
     this.camera.zoom = 1;
     this._frustum();
     this.controls.update();
@@ -167,7 +186,11 @@ export class View3D {
   setTheme(theme) { this.theme = theme; if (this.last) this.setScene(this.last); else this.render(); }
 
   clear(group) {
-    group.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
+    group.traverse((o) => {
+      if (o.isInstancedMesh) o.dispose();
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+    });
     group.clear();
   }
 
@@ -228,7 +251,7 @@ export class View3D {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute("position", new THREE.BufferAttribute(b64(d.surface.points, Float32Array), 3));
       const cols = b64(d.surface.colors, Uint8Array), cf = new Float32Array(cols.length);
-      for (let i = 0; i < cols.length; i++) cf[i] = cols[i] / 255;
+      for (let i = 0; i < cols.length; i++) cf[i] = LIN[cols[i]];
       geo.setAttribute("color", new THREE.BufferAttribute(cf, 3));
       geo.setIndex(new THREE.BufferAttribute(b64(d.surface.triangles, Uint32Array), 1));
       geo.computeVertexNormals();
@@ -328,7 +351,30 @@ export class View3D {
 
   viewAlong(center, normal, e2) {
     const c = new THREE.Vector3(...center), n = new THREE.Vector3(...normal);
-    this.setCamera({ position: c.clone().addScaledVector(n, 5).toArray(), focal_point: c.toArray(), view_up: e2 }, 1.35);
+    this.setCamera({ position: c.clone().addScaledVector(n, 5).toArray(), focal_point: c.toArray(), view_up: e2 }, 1.35, NORMAL_R);
+  }
+
+  // labels behind geometry are hidden, as VTK's point labels (checked once the view is still)
+  _occlusion() {
+    clearTimeout(this._occT);
+    this._occT = setTimeout(() => {
+      const rc = new THREE.Raycaster(), dir = new THREE.Vector3(), p = new THREE.Vector3();
+      const meshes = [];
+      this.groups.scene.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !(o.material && o.material.transparent)) meshes.push(o); });
+      const camDir = new THREE.Vector3(); this.camera.getWorldDirection(camDir);
+      let changed = false;
+      for (const L of this.labels) {
+        if (L.screen) continue;
+        p.set(...L.pos);
+        // orthographic camera: cast along the view direction from in front of the label
+        const origin = p.clone().addScaledVector(camDir, -20);
+        rc.set(origin, camDir);
+        rc.far = 20 - 0.03;
+        const hit = rc.intersectObjects(meshes, false).length > 0;
+        if (hit !== !!L.hidden) { L.hidden = hit; changed = true; }
+      }
+      if (changed) this.placeLabels();
+    }, 120);
   }
 
   render() {
@@ -339,30 +385,89 @@ export class View3D {
       this.light.target.position.copy(this.controls.target);
       this.light.target.updateMatrixWorld();
       this.renderer.render(this.scene, this.camera);
+      this._renderAxes();
       this.placeLabels();
+      this._occlusion();
     });
   }
 
   renderNow() {
     this.light.position.copy(this.camera.position);
     this.renderer.render(this.scene, this.camera);
+    this._renderAxes();
     this.placeLabels();
   }
 
   placeLabels() {
     const el = this.labelsDiv, w = el.clientWidth, h = el.clientHeight;
-    el.innerHTML = "";
+    const all = [...this.labels, ...this.axisLabels()];
+    while (el.children.length < all.length) el.appendChild(document.createElement("div"));
+    while (el.children.length > all.length) el.lastChild.remove();
     const v = new THREE.Vector3();
-    for (const L of this.labels) {
-      v.set(...L.pos).project(this.camera);
-      if (Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1) continue;
-      const d = document.createElement("div");
-      d.className = "lab3d" + (L.plain ? " plain" : "");
-      if (L.bg) d.style.background = L.bg;
-      d.style.left = `${((v.x + 1) / 2) * w}px`;
-      d.style.top = `${((1 - v.y) / 2) * h}px`;
-      d.textContent = L.text;
-      el.appendChild(d);
-    }
+    all.forEach((L, i) => {
+      const d = el.children[i];
+      if (L.screen) { v.set(L.screen[0], L.screen[1], 0); } else v.set(...L.pos).project(this.camera);
+      const off = !L.screen && (Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1 || L.hidden);
+      d.style.display = off ? "none" : "";
+      const cls = "lab3d" + (L.plain ? " plain" : "") + (L.axis ? " axis" : "");
+      if (d.className !== cls) d.className = cls;
+      d.style.background = L.bg || "";
+      if (L.color) d.style.color = L.color;
+      d.style.left = `${L.screen ? L.screen[0] : ((v.x + 1) / 2) * w}px`;
+      d.style.top = `${L.screen ? L.screen[1] : ((1 - v.y) / 2) * h}px`;
+      if (d.textContent !== L.text) d.textContent = L.text;
+    });
+  }
+
+  // the x / y / z triad in the lower-left corner (the desktop's add_axes, viewport 0–0.34 × 0.08–0.44)
+  _initAxes() {
+    this.axScene = new THREE.Scene();
+    this.axCam = new THREE.OrthographicCamera(-1.6, 1.6, 1.6, -1.6, -10, 10);
+    this.axScene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const l = new THREE.DirectionalLight(0xffffff, 1.2); l.position.set(1, 1, 2); this.axScene.add(l);
+    this.axDirs = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    const cols = ["#ff6347", "#3cb371", "#1e5cff"];
+    this.axDirs.forEach((d, i) => {
+      const dir = new THREE.Vector3(...d);
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.8, 12), new THREE.MeshPhongMaterial({ color: cols[i] }));
+      shaft.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      shaft.position.copy(dir.clone().multiplyScalar(0.4));
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.25, 16), new THREE.MeshPhongMaterial({ color: cols[i] }));
+      tip.quaternion.copy(shaft.quaternion);
+      tip.position.copy(dir.clone().multiplyScalar(0.92));
+      this.axScene.add(shaft, tip);
+    });
+  }
+
+  _axesViewport() {
+    const W = this.renderer.domElement.clientWidth, H = this.renderer.domElement.clientHeight;
+    const w = 0.34 * W, h = 0.36 * H, s = Math.min(w, h);
+    return { x: 0, y: 0.08 * H, s };
+  }
+
+  axisLabels() {
+    if (!this.axCam) return [];
+    const vp = this._axesViewport(), H = this.renderer.domElement.clientHeight, v = new THREE.Vector3();
+    return ["x", "y", "z"].map((t, i) => {
+      v.set(...this.axDirs[i]).multiplyScalar(1.25).project(this.axCam);
+      return { text: t, plain: true, axis: true, screen: [vp.x + ((v.x + 1) / 2) * vp.s, H - vp.y - ((v.y + 1) / 2) * vp.s] };
+    });
+  }
+
+  _renderAxes() {
+    const r = this.renderer, vp = this._axesViewport();
+    this.axCam.position.copy(this.camera.position).sub(this.controls.target).normalize().multiplyScalar(5);
+    this.axCam.up.copy(this.camera.up);
+    this.axCam.lookAt(0, 0, 0);
+    r.autoClear = false;
+    r.clearDepth();
+    r.setScissorTest(true);
+    r.setScissor(vp.x, vp.y, vp.s, vp.s);
+    r.setViewport(vp.x, vp.y, vp.s, vp.s);
+    r.render(this.axScene, this.axCam);
+    r.setScissorTest(false);
+    const W = r.domElement.clientWidth, H = r.domElement.clientHeight;
+    r.setViewport(0, 0, W, H);
+    r.autoClear = true;
   }
 }

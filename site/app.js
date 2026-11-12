@@ -44,11 +44,11 @@ const S = {
            axis_a: 0.025, opacity: 0.45, clip: true },
   showSlice3d: false, sliceShown: false,
   plane: { azimuth: -90, elevation: 0, offset: 0, half_size: 1.0 },
-  sliceOpts: { rho: false, log: false, lines: true, lic: false, density: 1.4 },
+  sliceOpts: { un: true, rho: false, log: false, lines: true, lic: false, density: 1.4, follow: false },
   plots: { xvar: "xi", mode: "linear", pole: "north", quantities: ["U", "f", "Q"], overlay: true },
   sigma: { x_name: "gamma", y_name: "kappa", x_range: [-2.6, 2.6], y_range: [-4.6, 4.6], n: 61, mode: "global",
            edge: true, mu: false, computed: null, running: false, axes: [] },
-  tab: "view3d", rtab: "profiles", solved: null,
+  tab: "view3d", rtab: "ctl3d", solved: null,
 };
 
 let py = null, view = null, path = null, syncPlots = () => {}, syncSigma = () => {};
@@ -59,7 +59,7 @@ const status = (t) => { $("sb-info").textContent = t; };
 // waiting (latest wins), so dragging a slider never piles up work.
 const jobs = new Map();          // kind -> {fn, args, resolve}
 let running = false;
-const ORDER = ["lock", "solve", "scene", "slice", "profiles", "sigma_draw", "sigma_point", "scan"];
+const ORDER = ["lock", "jump", "frame", "solve", "scene", "slice", "profiles", "sigma_draw", "sigma_point", "scan"];
 function schedule(kind, fn, args) {
   return new Promise((resolve, reject) => {
     const old = jobs.get(kind);
@@ -73,7 +73,8 @@ async function pump() {
   running = true;
   try {
     while (jobs.size) {
-      const kind = ORDER.find((k) => jobs.has(k)) || jobs.keys().next().value;
+      const rank = (k) => { const i = ORDER.indexOf(k.split(":")[0]); return i < 0 ? ORDER.length : i; };
+      const kind = [...jobs.keys()].sort((a, b) => rank(a) - rank(b))[0];
       const j = jobs.get(kind); jobs.delete(kind);
       try { j.resolve(await py.call(j.fn, ...j.args)); } catch (e) { console.error(kind, e); status(`${kind}: ${e.message}`); j.resolve(null); }
     }
@@ -98,7 +99,7 @@ function buildParams() {
     num.addEventListener("change", () => { const v = parseFloat(num.value); if (isFinite(v)) edit(p.name, v); });
   }
   const lab = document.createElement("span"); lab.className = "lab"; lab.textContent = "base point x₀";
-  const xb = document.createElement("input"); xb.type = "number"; xb.id = "p-xb"; xb.step = "0.01"; xb.min = -0.99; xb.max = 0.99;
+  const xb = document.createElement("input"); xb.type = "number"; xb.id = "p-xb"; xb.step = "0.001"; xb.min = -0.99; xb.max = 0.99;
   xb.title = "base point x_b = cos θ_b of the Cauchy data (default: equator)";
   xb.addEventListener("change", () => setParams({ ...S.params, xb: Math.max(-0.99, Math.min(0.99, parseFloat(xb.value) || 0)) }));
   grid.append(lab, document.createElement("span"), xb, document.createElement("span"));
@@ -118,12 +119,20 @@ function renderRanges() {
         syncWidgets();
       }));
     } else {
-      r.textContent = `${fmt(a, 3)} … ${fmt(b, 3)}`;
+      r.textContent = `${+a.toPrecision(6)} … ${+b.toPrecision(6)}`.replace(/-/g, "−");
+      r.title = "slider range (tick 'edit slider ranges' to change it)";
     }
   }
 }
 
 function syncWidgets() {
+  let widened = false;
+  for (const n of NAMES) {
+    const v = S.params[n];
+    if (v < S.ranges[n][0]) { S.ranges[n][0] = v; widened = true; }
+    if (v > S.ranges[n][1]) { S.ranges[n][1] = v; widened = true; }
+  }
+  if (widened) renderRanges();
   for (const n of NAMES) {
     const v = S.params[n], [a, b] = S.ranges[n];
     $(`p-${n}`).value = Number(v.toPrecision(13));
@@ -139,7 +148,7 @@ async function edit(name, value) {
   $("lock-note").hidden = true;
   if (S.lock && value !== old) {
     const g = ++lockGen;
-    const r = await schedule("lock", "lock", [S.params, name, old, value]);
+    const r = await schedule(`lock:${name}`, "lock", [S.params, name, old, value]);
     if (r === null || g !== lockGen) return;            // superseded by a later edit
     if (r.note) { $("lock-note").textContent = r.note; $("lock-note").hidden = false; }
     value = r.value;
@@ -188,7 +197,7 @@ let sceneGen = 0;
 async function refreshScene(g = solveGen) {
   const k = ++sceneGen;
   $("busy3d").hidden = false;
-  const r = await schedule("scene", "scene", [S.scene]);
+  const r = await schedule("scene", "scene", [{ ...S.scene, _slice_shown: S.showSlice3d }]);
   if (k === sceneGen) $("busy3d").hidden = true;
   if (!r || g !== solveGen || !r.n_lines && r.n_lines !== 0) return;
   view.setScene(r);
@@ -198,17 +207,19 @@ async function refreshScene(g = solveGen) {
 }
 
 function renderLegend(r) {
-  $("legend3d").innerHTML = (r.legend || []).map((it) =>
-    `<div>${it.colors.map((c) => `<span class="sw" style="background:${c}"></span>`).join("")}&nbsp;${it.text}</div>`).join("");
-  if (S.showSlice3d) $("legend3d").innerHTML += `<div><span class="sw" style="background:#b2182b"></span><span class="sw" style="background:#2166ac"></span>&nbsp;slice plane: red = flow through it toward +n, blue = against n; dark lines = in-plane streamlines</div>`;
+  const items = r.legend || [], half = Math.ceil(items.length / 2);
+  $("legend3d").innerHTML = `<table><tr><td>${items.slice(0, half).join("<br>")}</td><td>${items.slice(half).join("<br>")}</td></tr></table>`;
+  $("s-color_by").disabled = !r.coloured;
+  $("s-color_by").title = r.coloured ? "" : "nothing on screen is colour-mapped right now (streamlines are dimmed while overlays are shown)";
 }
 
 let sliceGen = 0;
 async function refreshSlice(g = solveGen) {
+  if (!S.sliceShown && !S.showSlice3d) return;
   const k = ++sliceGen;
   if (S.sliceShown) $("busy-slice").hidden = false;
   const wrap = $("slice-wrap");
-  const opts = { ...S.sliceOpts, r_min: S.scene.r_min, axis_a: S.scene.axis_a, n: S.sliceOpts.lic ? 181 : 151,
+  const opts = { ...S.sliceOpts, r_min: S.scene.r_min, axis_a: S.scene.axis_a, shape: S.scene.domain_shape, n: S.plane.n || 181,
                  w: Math.max(300, wrap.clientWidth || 500), h: Math.max(360, wrap.clientHeight || 600), ratio: ratio() };
   const r = await schedule("slice", "slice_view", [S.plane, opts]);
   if (k === sliceGen) $("busy-slice").hidden = true;
@@ -217,6 +228,7 @@ async function refreshSlice(g = solveGen) {
   if (S.sliceShown) $("slice-img").src = r.png;
   view.setSlice(S.showSlice3d ? r : null);
   updateNormalText(r);
+  if (S.sliceOpts.follow) view.viewAlong(r.center, r.normal, r.e2);
 }
 
 function updateNormalText(r) {
@@ -230,38 +242,55 @@ let sigmaRun = 0;
 
 function sigmaSpec(base) {
   const s = S.sigma;
-  return { base: base || S.params, x_name: s.x_name, y_name: s.y_name, x_range: s.x_range, y_range: s.y_range, nx: s.n, ny: s.n };
+  return { base: { ...(base || S.params) }, x_name: s.x_name, y_name: s.y_name, x_range: [...s.x_range], y_range: [...s.y_range], nx: s.n, ny: s.n };
+}
+
+function startPool() {                 // also on hovering the Σ-map tab: a head start for the first map
+  if (!pool.length) pool = Array.from({ length: poolSize }, () => new PyWorker("pool"));
 }
 
 async function computeSigma(base) {
   const s = S.sigma;
-  if (s.x_name === s.y_name) { $("sigma-note").textContent = "Choose two different parameters."; return; }
+  if (s.x_name === s.y_name) { $("sigma-note").textContent = "Pick two different parameters for the two axes."; return; }
+  if (s.x_range[0] >= s.x_range[1] || s.y_range[0] >= s.y_range[1]) { $("sigma-note").textContent = "Each range needs 'from' < 'to'."; return; }
   const run = ++sigmaRun, spec = sigmaSpec(base), t0 = performance.now();
   s.running = true; s.spec = spec;
   $("sg-compute").disabled = true; $("sg-cancel").disabled = false; $("sg-bar").style.width = "0%";
-  if (!pool.length) {
-    $("sigma-note").textContent = `starting ${poolSize} background workers (first map only)…`;
-    pool = Array.from({ length: poolSize }, () => new PyWorker("pool"));
-  }
+  if (!pool.length) $("sigma-note").textContent = `starting ${poolSize} background workers (first map only)…`;
+  startPool();
   await py.call("sigma_start", spec);
   const order = [...Array(spec.ny).keys()].sort((a, b) => Math.abs(a - (spec.ny - 1) / 2) - Math.abs(b - (spec.ny - 1) / 2));
   let next = 0, done = 0, lastDraw = 0;
   const chunk = Math.max(1, Math.round(spec.ny / (poolSize * 6)));
   $("sigma-note").textContent = "computing…";
+  const adds = [];
   const worker = async (w) => {
     await w.ready;
     while (next < order.length && run === sigmaRun) {
       const rows = order.slice(next, next + chunk); next += chunk;
       const res = await w.call("sigma_rows", spec, rows);
       if (run !== sigmaRun) return;
-      const st = await py.call("sigma_add", res);
+      adds.push(py.call("sigma_add", res));          // the pool does not wait for the main worker
       done += rows.length;
       $("sg-bar").style.width = `${(100 * done) / spec.ny}%`;
-      $("sigma-note").textContent = `computing… ${st.done.toLocaleString()} of ${(spec.nx * spec.ny).toLocaleString()} points`;
-      if (performance.now() - lastDraw > 900) { lastDraw = performance.now(); refreshSigma(); }
+      $("sigma-note").textContent = `computing… ${(done * spec.nx).toLocaleString()} of ${(spec.nx * spec.ny).toLocaleString()} points`;
+      if (performance.now() - lastDraw > 1500) { lastDraw = performance.now(); refreshSigma(); }
     }
   };
-  await Promise.all(pool.map(worker));
+  try {
+    await Promise.all(pool.map(worker));
+    await Promise.all(adds);
+  } catch (e) {
+    console.error(e);
+    pool.forEach((w) => w.terminate()); pool = [];      // start fresh workers next time
+    if (run === sigmaRun) {
+      s.running = false; sigmaRun++;
+      $("sg-compute").disabled = false; $("sg-cancel").disabled = true;
+      $("sigma-note").textContent = `Σ-map error: ${e.message} (the rows computed so far are shown)`;
+      refreshSigma();
+    }
+    return;
+  }
   if (run !== sigmaRun) return;
   s.running = false; s.computed = spec;
   $("sg-compute").disabled = false; $("sg-cancel").disabled = true;
@@ -329,10 +358,15 @@ function drawCross(d) {
 }
 
 let dragging = false, lastJump = 0, hoverT = 0;
+function sigmaParams(d) {                // the clicked point, from the map's own spec
+  const sp = S.sigma.spec;
+  return { ...sp.base, [sp.x_name]: d.x, [sp.y_name]: d.y };
+}
+
 async function sigmaJump(d) {
-  const q = { ...S.params, [S.sigma.x_name]: d.x, [S.sigma.y_name]: d.y };
-  if (S.lock && !(await py.call("is_global", q))) {
-    $("sigma-note").textContent = `Locked: (${SHORT[S.sigma.x_name]}, ${SHORT[S.sigma.y_name]}) = (${fmt(d.x, 4)}, ${fmt(d.y, 4)}) is not global. Untick 'lock to global solutions' to go there.`;
+  const sp = S.sigma.spec, q = sigmaParams(d);
+  if (S.lock && !(await schedule("jump", "is_global", [q]))) {
+    $("sigma-note").textContent = `Locked: (${label(sp.x_name)}, ${label(sp.y_name)}) = (${+d.x.toPrecision(4)}, ${+d.y.toPrecision(4)}) is not global. Untick 'lock to global solutions' to go there.`;
     return;
   }
   setParams(q);
@@ -355,7 +389,7 @@ function bindSigma() {
     if (!d || ev.button !== 0) return;
     if (ev.shiftKey) {                            // a keyframe for the path panel, no jump
       showPath(true);
-      path.addKeyframe({ ...S.params, [S.sigma.x_name]: d.x, [S.sigma.y_name]: d.y });
+      path.addKeyframe(sigmaParams(d));
       status(`keyframe ${path.path.keyframes.length} added from the Σ-map`);
       return;
     }
@@ -377,7 +411,7 @@ function setTab(t) {
     if (!S.sigma.spec && !S.sigma.running) computeSigma();   // the first visit computes a map right away
     else refreshSigma();
   } else {
-    setRTab(S.sliceShown ? "ctlslice" : "ctl3d");
+    setRTab("ctl3d");
     view.resize();
     refreshViews();
   }
@@ -426,7 +460,7 @@ function syncSceneWidgets() {
   const s = S.scene;
   $("s-seed_mode").value = s.seed_mode; $("s-n_seeds").value = s.n_seeds;
   [$("s-cx").value, $("s-cy").value, $("s-cz").value] = s.sphere_center;
-  $("s-sphere_radius").value = s.sphere_radius; $("s-color_by").value = s.color_by;
+  $("s-sphere_radius").value = s.sphere_radius; $("s-color_by").value = s.color_by; $("s-shape").value = s.domain_shape;
   document.querySelectorAll("#layers input").forEach((c) => { c.checked = !!s[c.dataset.k]; });
   $("s-r_min").value = s.r_min; $("s-axis_a").value = s.axis_a; $("s-opacity").value = Math.round(s.opacity * 100);
   $("s-show_slice").checked = S.showSlice3d;
@@ -438,6 +472,7 @@ function bindScene() {
     S.scene[k] = Math.max(lo, Math.min(hi, v)); refreshScene(); if (k !== "n_seeds") refreshSlice();
   });
   $("s-seed_mode").addEventListener("change", () => { S.scene.seed_mode = $("s-seed_mode").value; refreshScene(); });
+  $("s-shape").addEventListener("change", () => { S.scene.domain_shape = $("s-shape").value; refreshScene(); refreshSlice(); });
   num("s-n_seeds", "n_seeds", 1, 600);
   num("s-sphere_radius", "sphere_radius", 0.02, 0.9);
   num("s-r_min", "r_min", 0.01, 0.8);
@@ -474,7 +509,7 @@ function bindSlice() {
     $(ids[0]).addEventListener("input", () => setPlane({ [k]: parseFloat($(ids[0]).value) }));
     $(ids[1]).addEventListener("change", () => { const v = parseFloat($(ids[1]).value); if (isFinite(v)) setPlane({ [k]: v }); });
   }
-  for (const [id, k] of [["sl-rho", "rho"], ["sl-log", "log"], ["sl-lines", "lines"], ["sl-lic", "lic"]]) {
+  for (const [id, k] of [["sl-un", "un"], ["sl-rho", "rho"], ["sl-log", "log"], ["sl-lines", "lines"], ["sl-lic", "lic"], ["sl-follow", "follow"]]) {
     $(id).addEventListener("change", () => { S.sliceOpts[k] = $(id).checked; refreshSlice(); });
   }
   $("sl-density").addEventListener("change", () => { S.sliceOpts.density = parseFloat($("sl-density").value) || 1.4; refreshSlice(); });
@@ -548,7 +583,14 @@ function bindProfiles() {
   qs.addEventListener("change", ch);
   $("pl-pin").addEventListener("click", async () => { const n = await py.call("pin"); $("pl-pins").textContent = n ? `${n} pinned` : ""; refreshProfiles(); });
   $("pl-clear").addEventListener("click", async () => { await py.call("clear_pins"); $("pl-pins").textContent = ""; refreshProfiles(); });
-  $("pl-export").addEventListener("click", () => download($("profiles-img").src, "profiles.png"));
+  $("pl-export").addEventListener("change", async () => {
+    const kind = $("pl-export").value; $("pl-export").value = "";
+    if (kind === "png") { download($("profiles-img").src, "profiles.png"); return; }
+    const w = Math.max(280, $("right").clientWidth - 20), n = S.plots.quantities.length;
+    const r = await py.call("profiles", { ...S.plots, w, h: Math.max(320, Math.min(160 * n + 120, 1100)), format: kind });
+    const text = kind === "svg" ? r.svg : r.csv;
+    download(URL.createObjectURL(new Blob([text], { type: kind === "svg" ? "image/svg+xml" : "text/csv" })), `profiles.${kind}`);
+  });
 }
 
 // ============================================================================ sessions (the desktop's format)
@@ -556,9 +598,9 @@ function collectSession() {
   return {
     params: S.params, path: path.path.keyframes.length ? path.path : null,
     lock: S.lock, scene: { ...S.scene, show_slice: S.showSlice3d, show_handle: false },
-    camera: view.getCamera(), plane: { ...S.plane, n: 181 },
-    slice: { chk_un: true, chk_lines: S.sliceOpts.lines, chk_lic: S.sliceOpts.lic, chk_rho: S.sliceOpts.rho,
-             chk_log: S.sliceOpts.log, follow: false, density: S.sliceOpts.density },
+    camera: view.getCamera(), plane: { ...S.plane, n: S.plane.n || 181 },
+    slice: { chk_un: S.sliceOpts.un, chk_lines: S.sliceOpts.lines, chk_lic: S.sliceOpts.lic, chk_rho: S.sliceOpts.rho,
+             chk_log: S.sliceOpts.log, follow: S.sliceOpts.follow, density: S.sliceOpts.density },
     plots: { xvar: S.plots.xvar, mode: S.plots.mode, pole: S.plots.pole, quantities: S.plots.quantities, overlay: S.plots.overlay },
     sigma: { x_name: S.sigma.x_name, y_name: S.sigma.y_name, x_range: S.sigma.x_range, y_range: S.sigma.y_range,
              grid: S.sigma.n, mode: S.sigma.mode, edge: S.sigma.edge, mu: S.sigma.mu },
@@ -571,11 +613,15 @@ async function applySession(text) {
   let s;
   try { s = await py.call("session_load", text); } catch (e) { alert("Could not open this file:\n" + e.message); return; }
   const sec = s.sections || {};
+  if (S.sigma.running) cancelSigma();
   if (sec.ui && sec.ui.theme) setTheme(sec.ui.theme);
   if ("lock" in sec) { S.lock = !!sec.lock; $("lock").checked = S.lock; }
+  const ui = sec.ui || {};
+  if (!!ui.show_slice !== S.sliceShown) showSlice(!!ui.show_slice);     // first: it switches 3D layers
   if (sec.scene) { const sc = { ...sec.scene }; delete sc.show_handle; S.showSlice3d = !!sc.show_slice; delete sc.show_slice; Object.assign(S.scene, sc); }
-  if (sec.plane) S.plane = { azimuth: sec.plane.azimuth, elevation: sec.plane.elevation, offset: sec.plane.offset, half_size: sec.plane.half_size || 1 };
-  if (sec.slice) Object.assign(S.sliceOpts, { lines: sec.slice.chk_lines, lic: sec.slice.chk_lic, rho: sec.slice.chk_rho, log: sec.slice.chk_log, density: sec.slice.density });
+  if (sec.plane) S.plane = { azimuth: sec.plane.azimuth, elevation: sec.plane.elevation, offset: sec.plane.offset, half_size: sec.plane.half_size || 1, n: sec.plane.n || 181 };
+  if (sec.slice) Object.assign(S.sliceOpts, { un: sec.slice.chk_un !== false, lines: sec.slice.chk_lines, lic: sec.slice.chk_lic,
+    rho: sec.slice.chk_rho, log: sec.slice.chk_log, density: sec.slice.density, follow: !!sec.slice.follow });
   if (sec.plots) { Object.assign(S.plots, sec.plots); syncPlots(); }
   if (sec.sigma) {
     Object.assign(S.sigma, { x_name: sec.sigma.x_name, y_name: sec.sigma.y_name, x_range: sec.sigma.x_range,
@@ -584,11 +630,10 @@ async function applySession(text) {
   }
   path.setPath(s.path, sec.movie || {});
   syncSceneWidgets();
-  for (const [id, k] of [["sl-rho", "rho"], ["sl-log", "log"], ["sl-lines", "lines"], ["sl-lic", "lic"]]) $(id).checked = !!S.sliceOpts[k];
+  for (const [id, k] of [["sl-un", "un"], ["sl-rho", "rho"], ["sl-log", "log"], ["sl-lines", "lines"], ["sl-lic", "lic"], ["sl-follow", "follow"]]) $(id).checked = !!S.sliceOpts[k];
   $("sl-density").value = S.sliceOpts.density;
-  const ui = sec.ui || {};
-  if (!!ui.show_slice !== S.sliceShown) showSlice(!!ui.show_slice);
-  showPath(!!ui.show_path || !!s.path);
+  view.setSlice(null);
+  showPath("show_path" in ui ? !!ui.show_path : !!s.path);
   if (sec.camera && sec.camera.position) view.setCamera(sec.camera);
   setPlane({});
   setParams(s.params);
@@ -630,17 +675,18 @@ async function main() {
     b.addEventListener("click", async () => {
       let L = 1.5;
       if (p.key === "landau") {
-        const dlg = $("landau-dlg"); dlg.showModal();
+        const dlg = $("landau-dlg"); dlg.returnValue = ""; dlg.showModal();
         const v = await new Promise((res) => dlg.addEventListener("close", () => res(dlg.returnValue), { once: true }));
         if (v !== "ok") return;
         L = parseFloat($("landau-L").value);
-        if (!isFinite(L) || L === 0) return;
+        if (!isFinite(L) || L === 0 || Math.abs(L) > 100) return;
       }
       setParams(await py.call("preset", p.key, L));
     });
     pres.appendChild(b);
   }
   S.idle = () => !running && jobs.size === 0;
+  S.show3d = () => { if (S.tab !== "view3d") setTab("view3d"); };
   path = new PathDock({ py, $, getParams: () => S.params, setParams, view, S,
     onChange: () => { if (S.tab === "sigma") refreshSigma(); }, schedule,
     captureExtras: (keys) => {
@@ -659,6 +705,7 @@ async function main() {
   bindScene(); bindSlice(); bindSigmaControls(); bindProfiles(); bindSigma();
   syncSceneWidgets();
   document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
+  document.querySelector('.tab[data-tab="sigma"]').addEventListener("mouseenter", startPool, { once: true });
   document.querySelectorAll(".rtab").forEach((b) => b.addEventListener("click", () => setRTab(b.dataset.rtab)));
   $("btn-slice").addEventListener("click", () => showSlice(!S.sliceShown));
   $("btn-path").addEventListener("click", () => showPath($("bottom").hidden));
@@ -675,9 +722,16 @@ async function main() {
     const f = $("file-open").files[0]; if (!f) return;
     applySession(await f.text()); $("file-open").value = "";
   });
+  window.addEventListener("keydown", (ev) => {
+    if (!(ev.ctrlKey || ev.metaKey)) return;
+    const k = ev.key.toLowerCase();
+    if (k === "o") { ev.preventDefault(); $("btn-open").click(); }
+    if (k === "s") { ev.preventDefault(); $("btn-save").click(); }
+  });
   window.addEventListener("resize", () => { clearTimeout(window._rz); window._rz = setTimeout(() => refreshViews(), 300); });
   S.params = S.info.start;
   syncWidgets();
+  setRTab(S.rtab);                                  // 3D controls raised, as the desktop
   $("loading").classList.add("done");
   view.resize();
   await requestSolve();
