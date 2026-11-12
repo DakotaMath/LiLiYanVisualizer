@@ -74,7 +74,9 @@ def info() -> dict:
     from ..viz.slices import PRESETS
     return {
         "version": __version__,
-        "sigma_explain": EXPLAIN, "sigma_click": CLICK_HELP.replace("(Path dock)", "(Path &amp; movie panel)"),
+        "sigma_explain": EXPLAIN, "sigma_click": CLICK_HELP.replace("(Path dock)", "(Path &amp; movie panel)").replace(
+            "<b>drag</b> to move.", "<b>drag a box</b> to zoom in on it (↶ on the map steps back out, "
+            "⤢ shows the whole region)."),
         "slice_presets": [{"label": k, "az": v[0], "el": v[1]} for k, v in PRESETS.items()],
         "start": Params(gamma=-1.6806045, kappa=1.0).to_dict(),
         "params": [{"name": n, "label": PARAM_UI[n][0], "tip": PARAM_UI[n][1], "range": DEFAULT_RANGES[n]}
@@ -401,6 +403,30 @@ def sigma_start(spec_d: dict) -> None:
                                  np.full(shape, np.nan), np.full(shape, np.nan), np.zeros(shape, bool))
 
 
+_SIGMA_CACHE: dict[str, SigmaMapResult] = {}      # finished maps, so zoom undo / full view are instant
+_SIGMA_CACHE_MAX = 12
+
+
+def sigma_keep(key: str) -> None:
+    """Remember the current (finished) map under ``key``; the oldest of more than 12 is dropped."""
+    if _S["sigma"] is None:
+        return
+    _SIGMA_CACHE.pop(key, None)
+    _SIGMA_CACHE[key] = _S["sigma"]
+    while len(_SIGMA_CACHE) > _SIGMA_CACHE_MAX:
+        _SIGMA_CACHE.pop(next(iter(_SIGMA_CACHE)))
+
+
+def sigma_recall(key: str) -> bool:
+    """Make a remembered map current again; False if there is none under ``key``."""
+    res = _SIGMA_CACHE.pop(key, None)
+    if res is None:
+        return False
+    _SIGMA_CACHE[key] = res                     # most recently used goes last
+    _S["sigma"] = res
+    return True
+
+
 def sigma_add(rows: list[dict]) -> dict:
     res = _S["sigma"]
     for r in rows:
@@ -501,7 +527,7 @@ def session_load(text: str) -> dict:
 
 # ----------------------------------------------------------------------------- dispatcher
 _PUBLIC = ("info", "preset", "set_theme", "lock", "is_global", "solve", "pin", "clear_pins", "profiles", "scene",
-           "slice_view", "sigma_rows", "sigma_start", "sigma_add", "sigma_draw", "sigma_point", "path_scan",
+           "slice_view", "sigma_rows", "sigma_start", "sigma_add", "sigma_keep", "sigma_recall", "sigma_draw", "sigma_point", "path_scan",
            "path_at", "session_json", "session_load")
 
 

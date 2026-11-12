@@ -35,7 +35,7 @@
       <ul>
         <li>Move a <b>slider</b> or type a value: the solution, the 3D view and the profiles follow. <b>Presets</b> jump to the book's examples.</li>
         <li>With <b>lock to global solutions</b> on, edits stop at the edge of the global set.</li>
-        <li>The <b>Σ-map</b> tab shows which data are global; click it to jump there, shift-click to add a path keyframe.</li>
+        <li>The <b>Σ-map</b> tab shows which data are global; click it to jump there, drag a box to zoom in, shift-click to add a path keyframe.</li>
         <li><b>Show 2D slice</b> cuts the flow with a plane; <b>Path &amp; movie</b> animates the data along keyframes.</li>
         <li>Everything runs in your browser; <b>Save session</b> files open in the desktop app too.</li>
       </ul>
@@ -89,12 +89,17 @@
       </div>
     </div>
     <div id="tab-sigma" class="tabpage" hidden>
-      <div id="sigma-hover" class="hoverline">Hover the map to read a point; click to jump there, drag to move; shift-click adds a path keyframe.</div>
+      <div id="sigma-hover" class="hoverline">Hover the map to read a point; click to jump there, drag a box to zoom in; shift-click adds a path keyframe.</div>
       <div id="sigma-note" class="note-line"></div>
       <div id="sigma-wrap">
         <img id="sigma-img" alt="the Σ-map" draggable="false">
         <div id="sigma-cross-h" class="cross" hidden></div>
         <div id="sigma-cross-v" class="cross" hidden></div>
+        <div id="sigma-box" hidden></div>
+        <div id="sigma-zoom" class="map-tools">
+          <button id="sg-undo" disabled title="undo the last zoom (back to the previous view)">↶ Undo zoom</button>
+          <button id="sg-full" title="zoom all the way out: the whole global region">⤢ Full view</button>
+        </div>
       </div>
     </div>
   </main>
