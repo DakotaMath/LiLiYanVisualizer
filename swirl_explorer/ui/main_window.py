@@ -11,6 +11,7 @@ from .panels.params_panel import ParamsPanel
 from .panels.status_panel import StatusPanel
 from .panels.plots_panel import PlotsPanel
 from .panels.view3d_panel import View3DPanel
+from .panels.slice_panel import SlicePanel, SliceController
 from .worker import SolveThread
 
 
@@ -38,8 +39,12 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.view3d = View3DPanel()
         self.tabs.addTab(self.view3d, "3D view")
-        self.tabs.addTab(_placeholder("Slice plane", "u·n colouring and projected streamlines (milestone 4)."),
-                         "Slice plane")
+        self.slice_ctrl = SliceController()
+        self.slice = SlicePanel(self.slice_ctrl)
+        self.view3d.attach_slice(self.slice_ctrl)
+        self.slice.sliceReady.connect(self.view3d.set_slice)
+        self.view3d.domainChanged.connect(self.slice.set_domain)
+        self.tabs.addTab(self.slice, "Slice plane")
         self.tabs.addTab(_placeholder("Σ-map", "Globality and pole strata on 2D slices of R⁶ (milestone 5)."),
                          "Σ-map")
         # left: parameters + status
@@ -100,6 +105,7 @@ class MainWindow(QMainWindow):
         self.status.show_summary(sm, ms)
         self.plots.set_current(sol, sm)
         self.view3d.set_solution(sol, sm)
+        self.slice.set_solution(sol, sm)
         self.statusBar().showMessage(
             f"(c₁, c₂, c₃, γ, A, κ) = ({', '.join(f'{v:.7g}' for v in p.as_tuple())}) at x₀ = {p.xb:g}"
             f"   ·   solve {ms:.0f} ms")
@@ -114,6 +120,7 @@ class MainWindow(QMainWindow):
         self.params.refresh_style()
         self.plots.refresh_style()
         self.view3d.refresh_style()
+        self.slice.refresh_style()
         if self.last is not None:
             p, sol, sm = self.last
             self.status.show_summary(sm, 0.0)
@@ -137,4 +144,5 @@ class MainWindow(QMainWindow):
     def closeEvent(self, ev):
         self.solver.stop()
         self.view3d.shutdown()
+        self.slice.shutdown()
         super().closeEvent(ev)

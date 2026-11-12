@@ -57,9 +57,14 @@ class _SceneWorker(QObject):
 
 
 class View3DPanel(QWidget):
+    domainChanged = Signal(object)           # Domain, so the slice panel uses the same cut-outs
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.settings = SceneSettings()
+        self.slice_ctrl = None
+        self._slice = None                   # (SliceData, lines) from the slice panel
+        self._plane_widget = None
         self.sol = None
         self.summary = None
         self._token = 0
@@ -163,6 +168,18 @@ class View3DPanel(QWidget):
         gv.addWidget(self.iso_info)
         v.addWidget(g)
 
+        g = QGroupBox("Slice plane (see the Slice plane tab)")
+        gv = QVBoxLayout(g)
+        self.chk_slice = QCheckBox("show the slice plane here")
+        self.chk_slice.setToolTip("the plane coloured by u·n with its in-plane streamlines")
+        self.chk_plane_widget = QCheckBox("drag the plane in 3D")
+        self.chk_plane_widget.setToolTip("adds a plane handle: drag it to move, the arrow to tilt")
+        self.chk_slice.toggled.connect(self._slice_toggled)
+        self.chk_plane_widget.toggled.connect(self._plane_widget_toggled)
+        gv.addWidget(self.chk_slice)
+        gv.addWidget(self.chk_plane_widget)
+        v.addWidget(g)
+
         g = QGroupBox("Region")
         f = QFormLayout(g)
         self.shape = QComboBox()
@@ -229,6 +246,8 @@ class View3DPanel(QWidget):
         s.r_min = self.r_min.value()
         s.axis_a = self.axis_a.value()
         s.opacity = self.opacity.value() / 100
+        from ...viz.streamlines import Domain
+        self.domainChanged.emit(Domain(R=1.0, r_min=s.r_min, axis_a=s.axis_a, shape=s.domain_shape))
 
     def _changed(self, *_):
         self._read_controls()
@@ -446,6 +465,10 @@ class View3DPanel(QWidget):
         if data.swirl_arcs:
             items.append(sw.format(c="#e65100") + "orange arcs: sense of the swirl u_φ near each pole")
         items.append(sw.format(c=style.c()["origin"]) + "grey ball: origin cut out (u ~ 1/|X| is singular there)")
+        if self.chk_slice.isChecked():
+            items.append("<span style='color:#b2182b;font-size:15px'>■</span><span style='color:#2166ac;"
+                         "font-size:15px'>■</span>&nbsp;slice plane: red = flow through it toward +n, blue = "
+                         "against n; dark lines = in-plane streamlines")
         items.append(sw.format(c=style.c()["outline"]) + "thin ellipses: equator and cut-plane meridian of |X| = 1")
         half = (len(items) + 1) // 2
         cols = ["<br>".join(items[:half]), "<br>".join(items[half:])]
@@ -472,6 +495,7 @@ class View3DPanel(QWidget):
         if not self._camera_set:
             self._reset_camera()
             self._camera_set = True
+        self._draw_slice(render=False)
         pl.render()
         tm = data.timings.get("total", 0) * 1e3
         self.iso_info.setText(f"level = {data.iso_level:.3g}" if s.show_iso else "")
@@ -483,6 +507,92 @@ class View3DPanel(QWidget):
         p = style.c()
         self.legend.setStyleSheet(f"background:{p['panel']};border-top:1px solid {p['border']};padding:6px 8px;"
                                   f"font-size:12px;color:{p['text']};")
+
+    # ---------------------------------------------------------------- slice plane
+    def attach_slice(self, controller):
+        self.slice_ctrl = controller
+        controller.planeChanged.connect(self._plane_changed_elsewhere)
+
+    def set_slice(self, data, lines):
+        self._slice = (data, lines)
+        if self.chk_slice.isChecked():
+            self._draw_slice(render=True)
+
+    def _slice_toggled(self, on):
+        if not on and self.plotter is not None:
+            for n in ("sl_plane", "sl_lines", "sl_normal"):
+                self.plotter.remove_actor(n, render=False)
+            self.plotter.render()
+        else:
+            self._draw_slice(render=True)
+        self._debounce.start()            # legend
+
+    def _draw_slice(self, render=True):
+        pl = self.plotter
+        if pl is None:
+            return
+        for n in ("sl_plane", "sl_lines", "sl_normal"):
+            pl.remove_actor(n, render=False)
+        if not self.chk_slice.isChecked() or self._slice is None:
+            if render:
+                pl.render()
+            return
+        import pyvista as pv
+        data, lines = self._slice
+        X = data.X
+        grid = pv.StructuredGrid(X[..., 0], X[..., 1], X[..., 2])
+        un = data.un
+        v = un[np.isfinite(un)]
+        m = float(np.percentile(np.abs(v), 95)) if v.size else 1.0
+        grid["un"] = un.ravel(order="F")
+        pl.add_mesh(grid, scalars="un", cmap="RdBu_r", clim=(-m, m), nan_opacity=0.0, opacity=0.85,
+                    show_scalar_bar=False, name="sl_plane", smooth_shading=False)
+        lift = 0.006 * data.spec.normal                # draw the lines just above the plane (no z-fighting)
+        polys = [data.spec.to_world(L[:, 0], L[:, 1]) + lift for L in lines if len(L) > 1]
+        if polys:
+            from ...viz.scene3d import _polylines
+            pl.add_mesh(_polylines(polys), color="#111111", line_width=1.5, name="sl_lines")
+        c, n = data.spec.center, data.spec.normal
+        pl.add_mesh(pv.Arrow(start=c, direction=n, scale=0.35, tip_radius=0.08, shaft_radius=0.025),
+                    color="#f2c14e", name="sl_normal")
+        if render:
+            pl.render()
+
+    def _plane_widget_toggled(self, on):
+        pl = self.plotter
+        if pl is None:
+            return
+        pl.clear_plane_widgets()
+        self._plane_widget = None
+        if on and self.slice_ctrl is not None and getattr(pl, "iren", None) is not None:
+            spec = self.slice_ctrl.spec
+            self._plane_widget = pl.add_plane_widget(self._plane_dragged, normal=tuple(spec.normal),
+                                                     origin=tuple(spec.center), bounds=(-1.0, 1.0) * 3,
+                                                     implicit=False, normal_rotation=True, color="#f2c14e",
+                                                     outline_translation=False, origin_translation=True,
+                                                     interaction_event="end")
+            if not self.chk_slice.isChecked():
+                self.chk_slice.setChecked(True)
+
+    def _plane_dragged(self, normal, origin):
+        if self.slice_ctrl is None:
+            return
+        from ...viz.slices import PlaneSpec
+        old = self.slice_ctrl.spec
+        spec = PlaneSpec.from_normal_origin(normal, origin, half_size=old.half_size, n=old.n)
+        self.slice_ctrl.set_spec(spec, source=self)
+
+    def _plane_changed_elsewhere(self, payload):
+        spec, source = payload
+        w = self._plane_widget
+        if source is self or w is None:
+            return
+        try:
+            w.SetNormal(*spec.normal)
+            w.SetOrigin(*spec.center)
+            self.plotter.render()
+        except Exception:
+            pass
 
     def refresh_style(self):
         if self.plotter is None:
