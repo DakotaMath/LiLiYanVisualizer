@@ -357,7 +357,12 @@ class SlicePanel(QWidget):
                                        extend="neither" if data.symlog else "both", aspect=35, ticks=tk)
                 cb.ax.set_xticklabels([f"{v:.3g}".replace("-", "−") for v in
                                        (np.round(data.to_value(tk), 6) if data.symlog else tk)])
-                if data.symlog:
+                if data.is_zero:
+                    tk = [-m, 0, m]
+                    cb.set_ticks(tk)
+                    cb.ax.set_xticklabels(["", "0", ""])
+                    note = f"({data.show_label} = 0 on this plane, up to round-off: no flow through it)"
+                elif data.symlog:
                     note = f"(signed-log scale, linear below {data.lin_thresh:.2g}; max |{data.show_label}| = {data.vmax:.3g})"
                 else:
                     note = f"(values beyond ±{m:.3g} saturate; max |{data.show_label}| = {data.vmax:.3g})"

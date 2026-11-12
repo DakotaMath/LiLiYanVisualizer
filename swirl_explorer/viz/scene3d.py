@@ -17,6 +17,7 @@ import pyvista as pv
 from ..core.fields import FieldInterpolator
 from ..core.poles import Summary
 from .streamlines import Domain, TracedLines, stream_surface
+from .slices import ROUNDOFF
 
 STRATUM_COLORS = {"G": "#2a78d6", "R": "#e34948", "L1": "#eda100", "L2": "#8f3fd1",
                   "R0": "#e87ba4", "unsafe": "#8a8986", "blowup": "#8a8986", "?": "#8a8986"}
@@ -37,7 +38,15 @@ SEQUENTIAL = _truncated("viridis")      # the darkest purples vanish on the dark
 
 def scalar_values(fi: FieldInterpolator, X: np.ndarray, which: str) -> np.ndarray:
     key = {"speed": "speed", "u_phi": "u_phi", "helicity": "helicity", "pressure": "pressure"}[which]
-    return fi.scalar(X, key)
+    v = fi.scalar(X, key)
+    if which in ("u_phi", "helicity") and len(v):
+        # floating-point noise (e.g. u_φ ~ 1e-32 without swirl) is zero, not a colour pattern
+        sp = fi.scalar(X, "speed")
+        sp = sp[np.isfinite(sp)]
+        ref = float(sp.max()) if sp.size else 0.0
+        floor = ROUNDOFF * (ref if which == "u_phi" else ref * ref)
+        v = np.where(np.abs(v) <= floor, 0.0, v)
+    return v
 
 
 def colour_spec(values: np.ndarray, which: str) -> dict:

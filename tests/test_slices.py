@@ -144,8 +144,39 @@ def test_signed_log_display_inverts(fi):
     d = sample_plane(fi, PlaneSpec(n=61), Domain())
     d.set_display(False, symlog=True)
     ok = np.isfinite(d.un)
-    assert np.allclose(d.to_value(d.show[ok]), d.un[ok], rtol=1e-10, atol=1e-12)
+    from swirl_explorer.viz.slices import ROUNDOFF
+    sp = np.sqrt(d.un ** 2 + d.us ** 2 + d.ut ** 2)
+    floor = ROUNDOFF * np.nanmax(sp)                               # values below this are round-off -> 0
+    assert np.allclose(d.to_value(d.show[ok]), d.un[ok], rtol=1e-10, atol=floor)
     assert np.nanmax(np.abs(d.show)) <= d.clim + 1e-12           # nothing saturates on the log scale
     d.set_display(True)                                            # rho-scaled, linear
     rho = np.hypot(d.X[..., 0], d.X[..., 1])
     assert np.allclose(d.show[ok], (d.un * rho)[ok]) and d.to_value(2.0) == 2.0
+
+
+def test_roundoff_normal_velocity_is_zero_without_swirl():
+    """No swirl: u·n on a meridional plane is round-off (~1e-32) and must show as exactly zero."""
+    sol = solve(Params(c2=0.986, c3=1.332, gamma=-1.122))
+    d = sample_plane(FieldInterpolator(sol, dxi=0.002, fast=True), PlaneSpec(azimuth=-90, elevation=0, n=81), Domain())
+    for log in (False, True):
+        d.set_display(scale_by_rho=False, symlog=log)
+        assert d.is_zero and not d.symlog and d.clim == 1.0
+        assert np.nanmax(np.abs(d.show)) == 0.0
+    # a horizontal plane of the same flow does carry flow through it
+    h = sample_plane(FieldInterpolator(sol, dxi=0.002, fast=True), PlaneSpec(azimuth=0, elevation=90, offset=0.4, n=81),
+                     Domain())
+    h.set_display(scale_by_rho=False)
+    assert not h.is_zero and h.vmax > 1e-3
+
+
+def test_roundoff_swirl_colouring_is_zero_without_swirl():
+    from swirl_explorer.viz import scene3d
+    sol = solve(Params(c2=0.986, c3=1.332, gamma=-1.122))
+    f = FieldInterpolator(sol, dxi=0.002, fast=True)
+    rng = np.random.default_rng(0)
+    X = rng.uniform(-0.8, 0.8, (400, 3))
+    X = X[np.linalg.norm(X, axis=1) > 0.2]
+    for which in ("u_phi", "helicity"):
+        v = scene3d.scalar_values(f, X, which)
+        assert np.nanmax(np.abs(v)) == 0.0
+        assert scene3d.colour_spec(v, which)["clim"] == (-1.0, 1.0)

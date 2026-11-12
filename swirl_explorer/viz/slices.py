@@ -25,6 +25,8 @@ import numpy as np
 from ..core.fields import FieldInterpolator
 from .streamlines import Domain
 
+ROUNDOFF = 1e-10                # relative size below which u·n counts as zero (floating-point noise)
+
 PRESETS = {                     # name -> (azimuth°, elevation°)
     "meridional x–z": (-90.0, 0.0),
     "meridional y–z": (0.0, 0.0),
@@ -101,20 +103,33 @@ class SliceData:
 
     symlog: bool = False
     lin_thresh: float = 1.0
+    is_zero: bool = False
 
     def set_display(self, scale_by_rho: bool, symlog: bool = False, percentile: float = 85.0) -> None:
         """Choose the coloured field (u·n or ρ·u·n, optionally signed-log) and one symmetric colour limit
         shared by the 2D and 3D views."""
+        # round-off: |u·n| below ROUNDOFF·max|u| on the plane is zero (e.g. ~1e-32 on a meridional plane
+        # of a swirl-free flow) -- otherwise the colour range stretches over pure noise
+        speed = np.sqrt(self.un ** 2 + self.us ** 2 + self.ut ** 2)
+        speed = speed[np.isfinite(speed)]
+        floor = ROUNDOFF * (float(speed.max()) if speed.size else 0.0)
+        un = np.where(np.abs(self.un) <= floor, 0.0, self.un)
         if scale_by_rho:
             rho = np.hypot(self.X[..., 0], self.X[..., 1])
-            raw, self.show_label = self.un * rho, "ρ·(u·n)"
+            raw, self.show_label = un * rho, "ρ·(u·n)"
         else:
-            raw, self.show_label = self.un, "u·n"
+            raw, self.show_label = un, "u·n"
         v = np.abs(raw[np.isfinite(raw)])
-        self.vmax = float(v.max()) if v.size else 1.0
-        self.symlog = bool(symlog)
+        self.vmax = float(v.max()) if v.size else 0.0
+        self.is_zero = self.vmax == 0.0                 # no flow through the plane at all
+        self.symlog = bool(symlog) and not self.is_zero
+        if self.is_zero:
+            self.show = np.where(np.isfinite(raw), 0.0, np.nan)
+            self.clim, self.lin_thresh = 1.0, 1.0
+            return
         if symlog:
-            lt = float(np.percentile(v, 50)) if v.size else 1.0
+            nz = v[v > 0]
+            lt = float(np.percentile(nz, 50)) if nz.size else 1.0
             self.lin_thresh = lt if lt > 0 else 1.0
             self.show = np.sign(raw) * np.log10(1.0 + np.abs(raw) / self.lin_thresh)
             self.clim = float(np.log10(1.0 + self.vmax / self.lin_thresh)) or 1.0      # nothing saturates
