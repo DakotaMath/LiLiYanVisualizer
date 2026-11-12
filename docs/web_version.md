@@ -48,8 +48,8 @@ workers from `file://` addresses.
 ## Differences from the desktop app
 
 - **Speed:** the first visit downloads about 40 MB (Pyodide and the scientific packages); the
-  browser caches them. Computing is about 4–5 times slower than the desktop app: a solve takes about
-  0.1 s, a 61 × 61 Σ-map about 10 s.
+  browser caches them. The page is ready after about 6–10 s. Computing is about 4–5 times slower
+  than the desktop app: a solve takes 30–130 ms, a 101 × 101 Σ-map about 10 s on a 6-core machine.
 - **Seeds and the slice plane:** there are no drag handles; type the positions instead.
 - **3D layers:** the 3D view has no arrow glyphs and no isosurfaces.
 - **Movies:** *Record video* captures the 3D view along the path, with the same caption strip, as

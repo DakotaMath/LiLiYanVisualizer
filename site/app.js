@@ -724,6 +724,7 @@ async function main() {
   let introOff = false;
   try { introOff = localStorage.getItem("swirl.intro") === "off"; } catch (e) { /* storage blocked */ }
   $("intro").hidden = introOff;
+  if (!introOff) $("notation").open = false;         // keep the status in view next to the card
   $("intro-close").addEventListener("click", () => { $("intro").hidden = true; try { localStorage.setItem("swirl.intro", "off"); } catch (e) {} });
   $("btn-intro").addEventListener("click", () => { $("intro").hidden = false; $("left").scrollTop = 0; });
   // the path panel's height can be dragged, like the desktop's dock splitter

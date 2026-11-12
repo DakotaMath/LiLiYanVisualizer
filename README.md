@@ -60,7 +60,8 @@ equations with swirl*, which is in `docs/`.
 
 - Milestone 7: the Windows build (see below).
 - The browser version: the same Python code runs in the visitor's browser (Pyodide), published
-  with GitHub Pages. See [docs/web_version.md](docs/web_version.md).
+  with GitHub Pages. See [docs/web_version.md](docs/web_version.md). Screenshots:
+  `docs/figures/web_*.png` (made by `scripts/web_screenshots.py` with headless Chrome).
 
 Effective coordinates and continuation (milestone 8) come later.
 
