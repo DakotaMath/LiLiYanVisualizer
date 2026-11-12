@@ -202,6 +202,7 @@ async function refreshScene(g = solveGen) {
   if (!r || g !== solveGen || !r.n_lines && r.n_lines !== 0) return;
   view.setScene(r);
   renderLegend(r);
+  $("iso-info").textContent = S.scene.show_iso && r.iso ? `level = ${Number(r.iso.level.toPrecision(3))}` : "";
   const why = Object.entries(r.stops || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v}× ${k}`).join(", ");
   $("info3d").innerHTML = (why ? `streamline ends (both directions): ${why}<br>` : "") + `computed in ${r.ms.toFixed(0)} ms`;
 }
@@ -433,7 +434,7 @@ function showSlice(on) {
   $("rtab-slice").hidden = !on;
   $("btn-slice").textContent = on ? "Hide 2D slice" : "Show 2D slice";
   $("btn-slice").classList.toggle("on", on);
-  const keys = ["show_streamlines", "show_surface", "show_vortex", "show_selfsim", "clip"];
+  const keys = ["show_streamlines", "show_surface", "show_vortex", "show_glyphs", "show_iso", "show_selfsim", "clip"];
   if (on) {
     layersBefore = Object.fromEntries(keys.map((k) => [k, S.scene[k]]));
     for (const k of keys) S.scene[k] = false;
@@ -463,6 +464,7 @@ function syncSceneWidgets() {
   $("s-seed_mode").value = s.seed_mode; $("s-n_seeds").value = s.n_seeds;
   [$("s-cx").value, $("s-cy").value, $("s-cz").value] = s.sphere_center;
   $("s-sphere_radius").value = s.sphere_radius; $("s-color_by").value = s.color_by; $("s-shape").value = s.domain_shape;
+  $("s-iso_field").value = s.iso_field; $("s-iso_quantile").value = Math.round(s.iso_quantile * 100);
   document.querySelectorAll("#layers input").forEach((c) => { c.checked = !!s[c.dataset.k]; });
   $("s-r_min").value = s.r_min; $("s-axis_a").value = s.axis_a; $("s-opacity").value = Math.round(s.opacity * 100);
   $("s-show_slice").checked = S.showSlice3d;
@@ -485,6 +487,8 @@ function bindScene() {
   }));
   $("s-opacity").addEventListener("change", () => { S.scene.opacity = $("s-opacity").value / 100; refreshScene(); });
   $("s-color_by").addEventListener("change", () => { S.scene.color_by = $("s-color_by").value; refreshScene(); });
+  $("s-iso_field").addEventListener("change", () => { S.scene.iso_field = $("s-iso_field").value; refreshScene(); });
+  $("s-iso_quantile").addEventListener("change", () => { S.scene.iso_quantile = $("s-iso_quantile").value / 100; refreshScene(); });
   document.querySelectorAll("#layers input").forEach((c) => c.addEventListener("change", () => { S.scene[c.dataset.k] = c.checked; refreshScene(); }));
   $("s-show_slice").addEventListener("change", () => { S.showSlice3d = $("s-show_slice").checked; if (S.showSlice3d) refreshSlice(); else view.setSlice(null); refreshScene(); });
   $("cam-oblique").addEventListener("click", () => view.setCamera(OBLIQUE, 1.85));
@@ -673,6 +677,7 @@ async function main() {
   try { await py.ready; } catch (e) { $("load-msg").textContent = "Could not start Python: " + e.message; return; }
   S.info = await py.call("info");
   $("load-bar").style.width = "100%";
+  for (const c of S.info.iso_fields) { const o = document.createElement("option"); o.value = c.key; o.textContent = c.label; $("s-iso_field").appendChild(o); }
   for (const c of S.info.color_by) { const o = document.createElement("option"); o.value = c.key; o.textContent = c.label; $("s-color_by").appendChild(o); }
   buildParams();
   const pres = $("presets");

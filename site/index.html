@@ -149,10 +149,14 @@
           <label class="chk" title="integral curves of u from the seeds"><input type="checkbox" data-k="show_streamlines" checked> streamlines</label>
           <label class="chk" title="surface swept by streamlines from a seed line"><input type="checkbox" data-k="show_surface"> stream surface</label>
           <label class="chk" title="integral curves of the vorticity ω from the same seeds"><input type="checkbox" data-k="show_vortex"> vortex lines</label>
+          <label class="chk" title="velocity arrows on a coarse grid (length ∝ log speed)"><input type="checkbox" data-k="show_glyphs"> arrows</label>
+          <label class="chk" title="level set of the field chosen below"><input type="checkbox" data-k="show_iso"> isosurface</label>
           <label class="chk" title="the seed-centre streamline and its rescalings λX (also streamlines, since u is (−1)-homogeneous)"><input type="checkbox" data-k="show_selfsim"> self-similar copies</label>
           <label class="chk" title="clip lines and surfaces by the plane y = 0; the half facing the default camera goes"><input type="checkbox" data-k="clip" checked> cut away the near half (y &lt; 0)</label>
         </div>
-        <p class="muted small">Arrows and isosurfaces are in the desktop app only.</p>
+        <div class="pair iso-row"><select id="s-iso_field"></select>
+          <input id="s-iso_quantile" type="range" min="1" max="99" value="60" title="isosurface level, as a percentile of the sampled values"></div>
+        <p id="iso-info" class="muted small"></p>
       </section>
       <section class="group">
         <h3>Slice plane <span class="muted small">(more with Show 2D slice ↗)</span></h3>
@@ -294,8 +298,7 @@
   <p>This is the browser version of the Swirl Explorer desktop app. The same Python code (solver, pole
     diagnostics, plots) runs in your browser through Pyodide; nothing is sent to a server. It is about
     4–5 times slower than the desktop app, and the Σ-map is shared between several background workers.</p>
-  <p>Differences from the desktop app: no draggable seed or plane handles (type the values), no arrow glyphs or
-    isosurfaces in 3D, video recording (WebM/MP4 of the 3D view with the caption strip) instead of the composited
+  <p>Differences from the desktop app: no draggable seed or plane handles (type the values), video recording (WebM/MP4 of the 3D view with the caption strip) instead of the composited
     MP4 export.</p>
   <p>Keyboard: Ctrl+O opens a session, Ctrl+S saves one.</p>
   <form method="dialog"><button>Close</button></form>

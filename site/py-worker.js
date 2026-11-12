@@ -7,11 +7,11 @@ import { loadPyodide } from "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyod
 const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
 
 const role = new URL(self.location.href).searchParams.get("role") || "main";
-let call = null;
+let call = null, py = null, skimage = false;
 
 const ready = (async () => {
   const t0 = performance.now();
-  const py = await loadPyodide({ indexURL: PYODIDE });
+  py = await loadPyodide({ indexURL: PYODIDE });
   self.postMessage({ progress: "Python loaded", ms: performance.now() - t0 });
   await py.loadPackage(role === "pool" ? ["numpy", "scipy"] : ["numpy", "scipy", "matplotlib"]);
   self.postMessage({ progress: "numpy, scipy" + (role === "pool" ? "" : ", matplotlib") + " loaded",
@@ -27,6 +27,12 @@ self.onmessage = async (ev) => {
   const { id, fn, args } = ev.data;
   try {
     await ready;
+    // scikit-image (marching cubes) is downloaded only when an isosurface is first asked for
+    if (fn === "scene" && args && args[0] && args[0].show_iso && !skimage) {
+      self.postMessage({ progress: "loading scikit-image for the isosurface" });
+      await py.loadPackage(["scikit-image"]);
+      skimage = true;
+    }
     const result = call(fn, JSON.stringify(args || []));
     self.postMessage({ id, ok: true, result });
   } catch (e) {

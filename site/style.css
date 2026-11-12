@@ -169,3 +169,5 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
   .path-body { flex-direction: column; }
   #menubar .subtitle { display: none; }
 }
+.iso-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+.iso-row input[type=range] { flex: 1; min-width: 0; }

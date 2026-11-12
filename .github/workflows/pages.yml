@@ -38,7 +38,7 @@ jobs:
       # the bridge needs only what Pyodide provides: numpy, scipy, matplotlib (no Qt, no VTK)
       - name: Test the browser bridge
         run: |
-          python -m pip install --disable-pip-version-check numpy scipy matplotlib pillow pytest
+          python -m pip install --disable-pip-version-check numpy scipy matplotlib pillow scikit-image pytest
           python -m pytest -q tests/test_web_api.py tests/test_layout.py
 
       - name: Build the site
