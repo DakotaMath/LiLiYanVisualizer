@@ -38,10 +38,10 @@
       </div>
       <div id="lock-note" class="note" hidden></div>
     </section>
-    <section class="group">
-      <h3>Presets</h3>
+    <details id="presets-box" class="group" open>
+      <summary><h3>Presets</h3></summary>
       <div id="presets" class="preset-grid"></div>
-    </section>
+    </details>
     <details id="notation" class="notation" open><summary><b>Notation</b></summary> x = cos θ; the poles x = ±1 are the symmetry axis, d = sin θ is the distance
       to it. c<sub>1</sub>, c<sub>2</sub>, c<sub>3</sub>: Taylor constants of the potential Q at the base point,
       Q ≈ c<sub>1</sub>(1−x) + c<sub>2</sub>(1+x) + c<sub>3</sub>(1−x<sup>2</sup>). γ = U, A = f, κ = f<sub>x</sub>
@@ -144,7 +144,7 @@
         <p class="muted small">Arrows and isosurfaces are in the desktop app only.</p>
       </section>
       <section class="group">
-        <h3>Slice plane (its controls appear with Show 2D slice)</h3>
+        <h3>Slice plane <span class="muted small">(more with Show 2D slice ↗)</span></h3>
         <label class="chk" title="the plane coloured by u·n with its in-plane streamlines"><input id="s-show_slice" type="checkbox"> show the slice plane here</label>
       </section>
       <section class="group">
@@ -242,11 +242,9 @@
           <button id="pa-first" title="first frame">⏮</button>
           <button id="pa-play" title="preview: every view follows the path (frames are dropped if solving lags)">▶ Play</button>
           <button id="pa-last" title="last frame">⏭</button>
-          <span class="sep">·</span>
           <label title="frames along the path"><input id="pa-frames" type="number" min="2" max="5000" value="120"> frames</label>
           <label title="frames per second"><input id="pa-fps" type="number" min="1" max="60" value="24"> fps</label>
           <span id="pa-len" class="muted"></span>
-          <span class="sep">·</span>
           <label class="chk"><input id="pa-loop" type="checkbox"> loop</label>
           <span class="spacer"></span>
           <label title="what a recorded video shows where the solution is not global">not-global frames in the video:
@@ -277,7 +275,9 @@
   <h2>Conventions</h2>
   <p>Data at the base point x<sub>b</sub> (default the equator): c = Taylor constants of Q, γ = U(x<sub>b</sub>),
     A = f(x<sub>b</sub>), κ = f<sub>x</sub>(x<sub>b</sub>). The task brief's Γ is γ here, and its γ is κ.</p>
-  <p>Pole types G / R / L1 / L2 and labels follow the monograph (Table 4.1) and docs/conventions.md.</p>
+  <p>Pole types G / R / L1 / L2 and labels follow the monograph (Table 4.1) and docs/conventions.md.
+    A red <i>(uncertain)</i> after a pole type means the type was classified with confidence below 0.9: the
+    solution is close to a boundary between types (hover the pole line for the details).</p>
   <h3>About this page</h3>
   <p>This is the browser version of the Swirl Explorer desktop app. The same Python code (solver, pole
     diagnostics, plots) runs in your browser through Pyodide; nothing is sent to a server. It is about

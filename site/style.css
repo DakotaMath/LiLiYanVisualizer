@@ -37,6 +37,9 @@ input[type=checkbox] { accent-color: var(--accent); }
 label.chk { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
 .group { border: 1px solid var(--border); border-radius: 5px; padding: 6px 8px 8px; margin: 6px 0; background: var(--panel); }
 .group h3 { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--text); }
+details.group > summary { cursor: pointer; list-style-position: inside; }
+details.group > summary h3 { display: inline; }
+.form .pair { align-items: center; }
 .dock-title { font-size: 12px; font-weight: 400; margin: 2px 0 4px; color: var(--muted); }
 .note { color: var(--muted); font-size: 11px; margin-top: 3px; }
 

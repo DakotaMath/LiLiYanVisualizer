@@ -360,18 +360,19 @@ export class View3D {
     clearTimeout(this._occT);
     this._occT = setTimeout(() => {
       const rc = new THREE.Raycaster(), dir = new THREE.Vector3(), p = new THREE.Vector3();
-      const meshes = [];
+      const meshes = [], planes = [];
       this.groups.scene.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !o.userData.noOcclude && !(o.material && o.material.transparent)) meshes.push(o); });
+      this.groups.slice.traverse((o) => { if (o.isMesh) planes.push(o); });
       const camDir = new THREE.Vector3(); this.camera.getWorldDirection(camDir);
       let changed = false;
       for (const L of this.labels) {
-        if (L.screen || L.plain) continue;
+        if (L.screen) continue;
         p.set(...L.pos);
         // orthographic camera: cast along the view direction from in front of the label
         const origin = p.clone().addScaledVector(camDir, -20);
         rc.set(origin, camDir);
         rc.far = 20 - 0.12;                      // a little tolerance, as VTK's z-buffer test
-        const hit = rc.intersectObjects(meshes, false).length > 0;
+        const hit = (!L.plain && rc.intersectObjects(meshes, false).length > 0) || rc.intersectObjects(planes, false).length > 0;
         if (hit !== !!L.hidden) { L.hidden = hit; changed = true; }
       }
       if (changed) this.placeLabels();

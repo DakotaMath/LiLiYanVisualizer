@@ -131,7 +131,7 @@ export class PathDock {
     const tb = this.table.querySelector("tbody");
     tb.innerHTML = ks.map((k, r) => `<tr data-r="${r}" class="${r === this.sel ? "sel" : ""}"><td class="const">${r + 1}</td><td contenteditable data-c="t">${+k.t.toPrecision(10)}</td>` +
       NAMES.map((n) => `<td contenteditable data-c="${n}" class="${vary.includes(n) ? "" : "const"}" ${vary.includes(n) ? 'style="font-weight:600"' : ""}>${+Number(k.params[n]).toPrecision(10)}</td>`).join("") +
-      `<td class="const">${EXTRA.filter((e) => k.extras && e in k.extras).join(", ") || "—"}</td></tr>`).join("");
+      `<td class="const" title="${EXTRA.some((e) => k.extras && e in k.extras) ? "the view this keyframe restores" : "no view stored: tick camera / slice plane / seeds above before adding keyframes"}">${EXTRA.filter((e) => k.extras && e in k.extras).join(", ") || "—"}</td></tr>`).join("");
     tb.querySelectorAll("tr").forEach((tr) => tr.addEventListener("click", () => {
       this.sel = +tr.dataset.r; this.refreshSel();
       if (ks.length >= 2) { const [a, b] = this.duration(); this.goto(Math.round(((ks[this.sel].t - a) / ((b - a) || 1)) * (this.n() - 1))); }

@@ -452,6 +452,7 @@ function showSlice(on) {
 function showPath(on) {
   $("bottom").hidden = !on;
   $("notation").open = !on;
+  $("presets-box").open = !on;                     // the status stays visible above the path panel
   $("btn-path").classList.toggle("on", on);
   view.resize();
 }
