@@ -71,10 +71,12 @@ def test_main_window_solves_and_updates(app, tmp_path):
     w.slice_btn.click()
     assert w.slice.isVisible() and w.dock_slice.isVisible() and w.act_slice.text() == "Hide 2D slice"
     assert w.view3d.chk_slice.isChecked()          # the 3D slice follows the button ...
+    assert not any(c.isChecked() for c in w.view3d.chk.values())   # ... and everything else is off
     w.view3d.chk_slice.setChecked(False)           # ... but can be overridden
     assert w.slice.isVisible()
     w.slice_btn.click()
     assert not w.slice.isVisible() and not w.view3d.chk_slice.isChecked()
+    assert w.view3d.chk["show_streamlines"].isChecked()            # the earlier layers are back
     # a non-global choice updates the status with the blow-up point
     w.params.set_params(Params(gamma=5.0))
     assert _wait(app, lambda: w.last is not None and w.last[0].gamma == 5.0)

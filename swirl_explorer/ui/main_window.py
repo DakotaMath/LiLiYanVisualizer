@@ -167,7 +167,18 @@ class MainWindow(QMainWindow):
         self.slice.setVisible(on)
         self.dock_slice.setVisible(on)
         self.act_slice.setText("Hide 2D slice" if on else "Show 2D slice")
-        # follow the button in the 3D view too; the 3D controls checkbox can still override it afterwards
+        # Showing the slice clears the 3D view down to the slice plane (streamlines, arrows, surfaces ...
+        # off); hiding it turns the plane off and puts those layers back as they were.  Every checkbox
+        # in 3D controls can still be changed by hand in between.
+        layers = self.view3d.chk
+        if on:
+            self._layers_before_slice = {k: c.isChecked() for k, c in layers.items()}
+            for c in layers.values():
+                c.setChecked(False)
+        elif getattr(self, "_layers_before_slice", None) is not None:
+            for k, was in self._layers_before_slice.items():
+                layers[k].setChecked(was)
+            self._layers_before_slice = None
         self.view3d.chk_slice.setChecked(on)
         if on:
             self.split.setSizes([10000, 10000])         # 3D and slice equally wide
