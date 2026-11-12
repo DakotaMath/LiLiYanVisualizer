@@ -1,0 +1,89 @@
+# Builds the Windows app and publishes it.
+#
+#  - Push a tag like v0.7.0 (it must match swirl_explorer.__version__): the zip is built, self-tested
+#    and attached to a GitHub Release for that tag (created if needed).
+#  - Run it by hand (Actions > Windows build > Run workflow), or open a pull request that touches the
+#    packaging: the zip is built and self-tested and kept as a workflow artifact, no release.
+name: Windows build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "packaging/**"
+      - "build_windows.ps1"
+      - "requirements.txt"
+      - ".github/workflows/release.yml"
+
+permissions:
+  contents: write          # to create the release and upload the zip
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      # The runners have no GPU: install Mesa's software OpenGL so VTK (3D view) can render,
+      # for the tests and for the frozen self-test.
+      - uses: pyvista/setup-headless-display-action@v5
+        with:
+          qt: true
+          install-mesa3d-offscreen: false   # the app embeds VTK in a Qt window, not an off-screen one
+
+      - name: Check the tag matches the version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $v = (python -c "import swirl_explorer; print(swirl_explorer.__version__)").Trim()
+          if ("v$v" -ne "${{ github.ref_name }}") {
+            throw "tag ${{ github.ref_name }} does not match swirl_explorer.__version__ = $v"
+          }
+
+      - name: Build, test and self-test
+        shell: pwsh
+        run: ./build_windows.ps1
+
+      - name: Keep the self-test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: selftest-report
+          path: build/selftest/
+          if-no-files-found: ignore
+
+      - name: Keep the zip (manual runs and pull requests)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: SwirlExplorer-win64
+          path: dist/SwirlExplorer-*-win64.zip
+          retention-days: 14
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/SwirlExplorer-*-win64.zip
+          name: Swirl Explorer ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            **Windows (64-bit):** download `SwirlExplorer-*-win64.zip`, unzip it anywhere and run
+            `SwirlExplorer.exe`. Nothing needs to be installed.
+
+            The exe is not code-signed, so Windows SmartScreen asks the first time it runs:
+            click **More info → Run anyway**.
+
+            The build passed the tests and the app's self-test (solver, Σ-map, 3D view, MP4 export,
+            sessions) on GitHub's Windows runner before it was published.

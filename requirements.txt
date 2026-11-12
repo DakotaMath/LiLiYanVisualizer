@@ -1,0 +1,11 @@
+# Swirl Explorer run-time dependencies (Python 3.11+); tested with the versions noted.
+numpy>=2.0            # 2.5.4
+scipy>=1.12           # 1.18.1
+matplotlib>=3.8       # 3.11.2
+PySide6-Essentials>=6.6   # 6.12.0 (the full PySide6 also works)
+pyvista>=0.43         # 0.49.2
+pyvistaqt>=0.11       # 0.13.2
+vtk>=9.3              # 9.7.2
+imageio>=2.34         # 2.38.1
+imageio-ffmpeg>=0.5   # 0.8.1
+pillow>=10            # 13.0.0
