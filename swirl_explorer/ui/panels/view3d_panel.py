@@ -245,6 +245,11 @@ class View3DPanel(QWidget):
         want = self.settings.seed_mode if self.show_handle.isChecked() else "off"
         if self.plotter is None or self._widgets_mode == want:
             return
+        if want != "off" and getattr(self.plotter, "iren", None) is None:
+            # interactor not ready (being (re)initialised): try again on the next update
+            self._widgets_mode = None
+            QTimer.singleShot(200, self._sync_widgets)
+            return
         self.plotter.clear_sphere_widgets()
         self.plotter.clear_line_widgets()
         self._widgets_mode = want
@@ -408,7 +413,7 @@ class View3DPanel(QWidget):
                                 show_points=False, always_visible=True)
         sw = "<span style='color:{c};font-size:15px'>■</span>&nbsp;"
         import matplotlib
-        cm = matplotlib.colormaps[cs["cmap"]]
+        cm = matplotlib.colormaps[cs["cmap"]] if isinstance(cs["cmap"], str) else cs["cmap"]
         ramp = "".join(f"<span style='color:{matplotlib.colors.to_hex(cm(t))};font-size:15px'>■</span>"
                        for t in (0.05, 0.35, 0.65, 0.95)) + "&nbsp;"
         items = []
