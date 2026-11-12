@@ -160,6 +160,7 @@ function setParams(p) {             // presets, the Σ-map and the path set valu
   S.params = { ...S.params, ...p };
   syncWidgets();
   requestSolve();
+  sigmaFollowParams();
 }
 
 // ============================================================================ solve and the views
@@ -253,7 +254,10 @@ async function computeSigma(base) {
   const s = S.sigma;
   if (s.x_name === s.y_name) { $("sigma-note").textContent = "Pick two different parameters for the two axes."; return false; }
   if (s.x_range[0] >= s.x_range[1] || s.y_range[0] >= s.y_range[1]) { $("sigma-note").textContent = "Each range needs 'from' < 'to'."; return false; }
-  const run = ++sigmaRun, spec = sigmaSpec(base), t0 = performance.now(), key = JSON.stringify(spec);
+  const run = ++sigmaRun, spec = sigmaSpec(base), t0 = performance.now();
+  s.target = spec;                                     // the map being made (set before any await)
+  const kb = { ...spec.base }; delete kb[spec.x_name]; delete kb[spec.y_name];   // the axes' own values don't matter
+  const key = JSON.stringify({ ...spec, base: kb });
   if (await py.call("sigma_recall", key)) {           // seen this exact map before (zoom undo, full view)
     if (run !== sigmaRun) return false;
     s.running = false; s.spec = s.computed = spec;
@@ -420,18 +424,46 @@ function zoomUndo() {
   if (zoomStack.length) goView(zoomStack.pop(), false);
 }
 
+// The map's data (everything but its two axes) differ from the current solution's?
+function sigmaBaseChanged() {
+  const t = S.sigma.target;
+  if (!t) return false;
+  const rest = (p) => NAMES.filter((n) => n !== t.x_name && n !== t.y_name).map((n) => p[n]).concat(p.xb);
+  return JSON.stringify(rest(S.params)) !== JSON.stringify(rest(t.base));
+}
+
+// Changing the data (a slider, a preset, the base point...) regenerates the map in full view, once
+// the changes settle. Clicking on the map only moves along its axes, so it changes nothing here.
+let followTimer = 0;
+function sigmaFollowParams() {
+  clearTimeout(followTimer);
+  followTimer = setTimeout(() => {
+    if (S.tab !== "sigma" || !S.sigma.target) return;            // done on the next visit to the tab
+    if (path && (path.playing || path.recording)) { sigmaFollowParams(); return; }   // not while a path plays
+    if (sigmaBaseChanged()) fitFull({ fresh: true });
+  }, 700);
+}
+
 // Full view: zoom out until the whole global region is on the map, then trim empty margins.
 // Starts from each parameter's whole range (and never smaller than the current view); while
 // global points touch an edge of the map, that side is pushed out and the map recomputed.
-async function zoomFull() {
-  if (!S.sigma.spec) return;
-  const id = fitting = performance.now(), start = currentView(), same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// fresh: a new map for the current solution (first visit, changed data); the zoom history of
+// the old data is dropped. Otherwise (the button): the current map's data, and undoable.
+async function fitFull({ fresh = false } = {}) {
+  if (!fresh && !S.sigma.spec) return;
+  const s = S.sigma, id = fitting = performance.now(), same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const start = fresh ? { x_name: s.x_name, y_name: s.y_name, x_range: [...s.x_range], y_range: [...s.y_range], n: s.n, base: { ...S.params } }
+                      : currentView();
+  if (start.x_name === start.y_name) { $("sigma-note").textContent = "Pick two different parameters for the two axes."; return; }
   const live = () => fitting === id;
   const note = (t) => { $("sigma-note").textContent = t; };
-  const fr = (n, r) => { const f = fullRange(n); return [Math.min(f[0], r[0]), Math.max(f[1], r[1])]; };
+  const fr = (n, r) => { const f = fullRange(n); return fresh ? f : [Math.min(f[0], r[0]), Math.max(f[1], r[1])]; };
   // the region is located on a coarse grid (fast); only the final view is computed at full resolution
   let v = { ...start, x_range: fr(start.x_name, start.x_range), y_range: fr(start.y_name, start.y_range), n: Math.min(start.n, 41) };
-  zoomStack.push(start); updateZoomButtons();
+  if (fresh) zoomStack.length = 0; else zoomStack.push(start);
+  updateZoomButtons();
+  if (fresh) note(S.sigma.spec ? "The data changed: redrawing the map, zoomed out to the whole global region…"
+                               : "Finding the whole global region…");
   try {
     for (let round = 0; ; round++) {
       if (!(await setView(v)) || !live()) return;
@@ -456,7 +488,7 @@ async function zoomFull() {
       };
       const fit = { ...v, x_range: trim(v.x_range, e.x, sx, v.n), y_range: trim(v.y_range, e.y, sy, v.n), n: start.n };
       if (!(await setView(fit)) || !live()) return;
-      if (same([start.x_range, start.y_range], [S.sigma.spec.x_range, S.sigma.spec.y_range])) {
+      if (!fresh && same([start.x_range, start.y_range], [S.sigma.spec.x_range, S.sigma.spec.y_range])) {
         zoomStack.pop(); updateZoomButtons();       // nothing changed, so nothing to undo
         note("This already shows the whole global region.");
       }
@@ -540,7 +572,7 @@ function bindSigma() {
     if (ev.key === "Escape" && press) { press = null; drawBox(null); }
   });
   $("sg-undo").addEventListener("click", zoomUndo);
-  $("sg-full").addEventListener("click", zoomFull);
+  $("sg-full").addEventListener("click", () => fitFull());
   updateZoomButtons();
 }
 
@@ -553,7 +585,9 @@ function setTab(t) {
   $("btn-slice").hidden = t === "sigma";
   if (t === "sigma") {
     setRTab("ctlsigma");
-    if (!S.sigma.spec && !S.sigma.running) computeSigma();   // the first visit computes a map right away
+    if (S.sigma.running || fitting) refreshSigma();
+    else if (!S.sigma.spec && S.sigma.keepRanges) { S.sigma.keepRanges = false; computeSigma(); }   // a loaded session's view
+    else if (!S.sigma.spec || sigmaBaseChanged()) fitFull({ fresh: true });   // first visit, or new data: the whole region
     else refreshSigma();
   } else {
     setRTab("ctl3d");
@@ -776,7 +810,7 @@ async function applySession(text) {
   if (sec.sigma) {
     Object.assign(S.sigma, { x_name: sec.sigma.x_name, y_name: sec.sigma.y_name, x_range: sec.sigma.x_range,
       y_range: sec.sigma.y_range, n: Math.min(sec.sigma.grid || 101, 401), mode: sec.sigma.mode, edge: sec.sigma.edge, mu: sec.sigma.mu });
-    S.sigma.spec = null; syncSigma();
+    S.sigma.spec = S.sigma.target = null; S.sigma.keepRanges = true; syncSigma();
     zoomStack.length = 0; updateZoomButtons();
   }
   path.setPath(s.path, sec.movie || {});
