@@ -51,7 +51,10 @@ label.chk { display: inline-flex; gap: 4px; align-items: center; cursor: pointer
 #left { grid-area: left; overflow-y: auto; padding: 4px 8px; border-right: 1px solid var(--border); }
 #center { grid-area: center; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 #right { grid-area: right; overflow-y: auto; padding: 4px 8px; border-left: 1px solid var(--border); }
-#bottom { grid-area: bottom; border-top: 1px solid var(--border); padding: 2px 8px 6px; height: 230px; }
+#bottom { grid-area: bottom; border-top: 1px solid var(--border); padding: 2px 8px 6px; height: 250px; }
+#pa-events { overflow-y: auto; min-height: 0; flex: 1; }
+.path-right { overflow: hidden; }
+.sep { color: var(--faint); }
 #statusbar { grid-area: status; display: flex; padding: 2px 8px; font-size: 11px; color: var(--muted);
   border-top: 1px solid var(--border); background: var(--panel); }
 

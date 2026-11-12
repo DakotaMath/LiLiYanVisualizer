@@ -365,7 +365,7 @@ export class View3D {
       const camDir = new THREE.Vector3(); this.camera.getWorldDirection(camDir);
       let changed = false;
       for (const L of this.labels) {
-        if (L.screen) continue;
+        if (L.screen || L.plain) continue;
         p.set(...L.pos);
         // orthographic camera: cast along the view direction from in front of the label
         const origin = p.clone().addScaledVector(camDir, -20);

@@ -82,7 +82,7 @@ export class PathDock {
     this.refresh();
   }
 
-  n() { return Math.max(2, Math.min(2000, parseInt(this.$("pa-frames").value) || 48)); }
+  n() { return Math.max(2, Math.min(5000, parseInt(this.$("pa-frames").value) || 120)); }
   fps() { return Math.max(1, Math.min(60, parseInt(this.$("pa-fps").value) || 24)); }
   keys() { return EXTRA.filter((k) => this.$(`pa-k-${k}`).checked); }
   duration() { const k = this.path.keyframes; return [k[0].t, k[k.length - 1].t]; }

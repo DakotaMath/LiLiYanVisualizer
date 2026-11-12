@@ -135,7 +135,7 @@ function syncWidgets() {
   if (widened) renderRanges();
   for (const n of NAMES) {
     const v = S.params[n], [a, b] = S.ranges[n];
-    $(`p-${n}`).value = Number(v.toPrecision(13));
+    $(`p-${n}`).value = Number(v.toPrecision(7));
     $(`p-${n}-s`).value = Math.round(2000 * Math.min(1, Math.max(0, (v - a) / (b - a))));
   }
   $("p-xb").value = S.params.xb;
