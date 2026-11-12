@@ -76,7 +76,8 @@ def info() -> dict:
         "version": __version__,
         "sigma_explain": EXPLAIN, "sigma_click": CLICK_HELP.replace("(Path dock)", "(Path &amp; movie panel)").replace(
             "<b>drag</b> to move.", "<b>drag a box</b> to zoom in on it (↶ on the map steps back out, "
-            "⤢ shows the whole region)."),
+            "⤢ shows the whole region). The map follows the data: change any other parameter and it is "
+            "redrawn for the new data, zoomed out to the whole region."),
         "slice_presets": [{"label": k, "az": v[0], "el": v[1]} for k, v in PRESETS.items()],
         "start": Params(gamma=-1.6806045, kappa=1.0).to_dict(),
         "params": [{"name": n, "label": PARAM_UI[n][0], "tip": PARAM_UI[n][1], "range": DEFAULT_RANGES[n]}
