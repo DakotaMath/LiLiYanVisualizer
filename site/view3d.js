@@ -417,6 +417,10 @@ export class View3D {
       d.style.left = `${L.screen ? L.screen[0] : ((v.x + 1) / 2) * w}px`;
       d.style.top = `${L.screen ? L.screen[1] : ((1 - v.y) / 2) * h}px`;
       if (d.textContent !== L.text) d.textContent = L.text;
+      if (!L.screen && !off) {
+        const half = d.offsetWidth / 2, x = ((v.x + 1) / 2) * w;
+        d.style.left = `${Math.max(half + 2, Math.min(w - half - 2, x))}px`;
+      }
     });
   }
 

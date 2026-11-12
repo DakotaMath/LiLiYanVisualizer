@@ -327,7 +327,8 @@ function updateSigmaExplain() {
   $("sg-explain").innerHTML = S.info.sigma_explain[S.sigma.mode] + S.info.sigma_click;
   $("sg-mu-wrap").hidden = S.sigma.mode === "mu";
   const p = S.params, others = NAMES.filter((n) => n !== S.sigma.x_name && n !== S.sigma.y_name);
-  $("sg-fixed").textContent = `Fixed at the current solution: ${others.map((n) => `${label(n)} = ${fmt(p[n], 4)}`).join(",  ")},  x₀ = ${p.xb}`;
+  const nb = (t) => t.replace(/ /g, "\u00a0");          // keep "c₁ = 0" together when the line wraps
+  $("sg-fixed").textContent = `Fixed at the current solution: ${others.map((n) => nb(`${label(n)} = ${fmt(p[n], 4)}`)).join(", ")}, ${nb(`x₀ = ${p.xb}`)}`;
 }
 const label = (n) => S.info.params.find((q) => q.name === n).label;
 
