@@ -27,6 +27,19 @@ PARAM_LABELS: dict[str, str] = {
     "gamma": "γ = U(0)", "A": "A = f(0)", "kappa": "κ = f_x(0)",
 }
 
+# label and tooltip shown by the front ends (desktop and browser), and the default slider ranges
+PARAM_UI: dict[str, tuple[str, str]] = {
+    "c1": ("c₁", "Taylor constant of Q: P_c = c₁(1−x) + c₂(1+x) + c₃(1−x²)"),
+    "c2": ("c₂", "Taylor constant of Q (north side)"),
+    "c3": ("c₃", "Taylor constant of Q (quadratic part)"),
+    "gamma": ("γ = U(x₀)", "meridional circulation at the base point (the brief's Γ)"),
+    "A": ("A = f(x₀)", "swirl at the base point"),
+    "kappa": ("κ = fₓ(x₀)", "swirl rate at the base point (the brief's γ)"),
+}
+DEFAULT_RANGES: dict[str, tuple[float, float]] = {
+    "c1": (-1.0, 3.0), "c2": (-1.0, 3.0), "c3": (-4.0, 4.0),
+    "gamma": (-3.0, 3.0), "A": (-3.0, 3.0), "kappa": (-5.0, 5.0)}
+
 
 @dataclass(frozen=True)
 class Params:

@@ -13,7 +13,6 @@ from ..core.solver import Solution
 from .streamlines import (Domain, trace, seeds_sphere, seeds_line, seeds_disc, seeds_ring, seeds_rings,
                           rescaled_copies,
                           TracedLines)
-from . import scene3d
 
 
 @dataclass
@@ -154,6 +153,7 @@ def compute_numeric(sol: Solution, s: SceneSettings) -> NumericScene:
 
 def build_scene(num: NumericScene, summary: Summary) -> SceneData:
     """Main-thread part: all VTK / PyVista objects (VTK is not thread-safe)."""
+    from . import scene3d          # PyVista: only needed here, not for the numbers (browser build)
     import pyvista as pv
     t0 = time.perf_counter()
     s, dom, fi = num.settings, num.domain, num.fi

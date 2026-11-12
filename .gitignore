@@ -6,3 +6,5 @@ dist/
 *.mp4
 .venv-build/
 build_log*.txt
+.venv-web/
+.venv-web/
