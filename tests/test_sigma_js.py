@@ -55,6 +55,6 @@ def test_generated_code_is_current():
     spec = importlib.util.spec_from_file_location("gen", ROOT / "scripts" / "gen_sigma_kernel_js.py")
     gen = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(gen)
-    src = KERNEL.read_text(encoding="utf-8")
+    src = KERNEL.read_text(encoding="utf-8").replace("\r\n", "\n")     # git may check out CRLF
     a, b = src.index(gen.BEGIN), src.index(gen.END) + len(gen.END)
     assert src[a:b] == gen.generate(), "run python scripts/gen_sigma_kernel_js.py"
