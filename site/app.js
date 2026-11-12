@@ -251,11 +251,11 @@ function startPool() {                 // also on hovering the Σ-map tab: a hea
 
 async function computeSigma(base) {
   const s = S.sigma;
-  if (s.x_name === s.y_name) { $("sigma-note").textContent = "Pick two different parameters for the two axes."; return; }
-  if (s.x_range[0] >= s.x_range[1] || s.y_range[0] >= s.y_range[1]) { $("sigma-note").textContent = "Each range needs 'from' < 'to'."; return; }
+  if (s.x_name === s.y_name) { $("sigma-note").textContent = "Pick two different parameters for the two axes."; return false; }
+  if (s.x_range[0] >= s.x_range[1] || s.y_range[0] >= s.y_range[1]) { $("sigma-note").textContent = "Each range needs 'from' < 'to'."; return false; }
   const run = ++sigmaRun, spec = sigmaSpec(base), t0 = performance.now(), key = JSON.stringify(spec);
   if (await py.call("sigma_recall", key)) {           // seen this exact map before (zoom undo, full view)
-    if (run !== sigmaRun) return;
+    if (run !== sigmaRun) return false;
     s.running = false; s.spec = s.computed = spec;
     $("sg-compute").disabled = false; $("sg-cancel").disabled = true; $("sg-bar").style.width = "100%";
     const r = await refreshSigma();
@@ -263,7 +263,7 @@ async function computeSigma(base) {
       const st = r.stats, pct = (100 * st.global) / Math.max(1, st.done);
       $("sigma-note").textContent = `${st.global.toLocaleString()} of ${st.done.toLocaleString()} grid points are global (${pct.toFixed(1)}%), on a ${st.nx} × ${st.ny} grid (computed earlier)`;
     }
-    return;
+    return true;
   }
   s.running = true; s.spec = spec;
   $("sg-compute").disabled = true; $("sg-cancel").disabled = false; $("sg-bar").style.width = "0%";
@@ -300,9 +300,9 @@ async function computeSigma(base) {
       $("sigma-note").textContent = `Σ-map error: ${e.message} (the rows computed so far are shown)`;
       refreshSigma();
     }
-    return;
+    return false;
   }
-  if (run !== sigmaRun) return;
+  if (run !== sigmaRun) return false;
   s.running = false; s.computed = spec;
   $("sg-compute").disabled = false; $("sg-cancel").disabled = true;
   py.call("sigma_keep", key);
@@ -312,6 +312,7 @@ async function computeSigma(base) {
     const st = r.stats, pct = (100 * st.global) / Math.max(1, st.done);
     $("sigma-note").textContent = `done in ${secs.toFixed(1)} s:  ${st.global.toLocaleString()} of ${st.done.toLocaleString()} grid points are global (${pct.toFixed(1)}%), on a ${st.nx} × ${st.ny} grid`;
   }
+  return true;
 }
 
 function cancelSigma() {
@@ -389,8 +390,8 @@ async function sigmaJump(d) {
 // Drag a box to zoom in (a new map over the box), ↶ to step back, ⤢ for the whole region.
 // Finished maps are remembered on the Python side, so stepping back is instant.
 const zoomStack = [];
-const FULL = { gamma: [-2.6, 2.6], kappa: [-4.6, 4.6] };     // the lens view; other axes: their whole range
-const fullRange = (n) => [...(FULL[n] || S.info.params.find((q) => q.name === n).range)];
+const fullRange = (n) => [...S.info.params.find((q) => q.name === n).range];
+let fitting = 0;                                   // id of the Full-view fit in progress (0: none)
 
 function currentView() {
   const sp = S.sigma.spec;
@@ -402,27 +403,68 @@ function updateZoomButtons() {
   $("sg-undo").title = zoomStack.length ? `undo the last zoom (${zoomStack.length} step${zoomStack.length > 1 ? "s" : ""} back available)` : "nothing to undo yet: drag a box on the map to zoom in";
 }
 
-function goView(v, remember) {
-  if (remember && S.sigma.spec) zoomStack.push(currentView());
-  if (zoomStack.length > 50) zoomStack.shift();
+function setView(v) {
   Object.assign(S.sigma, { x_name: v.x_name, y_name: v.y_name, x_range: [...v.x_range], y_range: [...v.y_range], n: v.n });
   syncSigma(); updateSigmaExplain(); updateZoomButtons();
-  computeSigma(v.base);
+  return computeSigma(v.base);                     // true once the map is finished
+}
+
+function goView(v, remember) {
+  fitting = 0;                                     // a zoom or undo stops a Full-view fit
+  if (remember && S.sigma.spec) zoomStack.push(currentView());
+  if (zoomStack.length > 50) zoomStack.shift();
+  return setView(v);
 }
 
 function zoomUndo() {
   if (zoomStack.length) goView(zoomStack.pop(), false);
 }
 
-function zoomFull() {
+// Full view: zoom out until the whole global region is on the map, then trim empty margins.
+// Starts from each parameter's whole range (and never smaller than the current view); while
+// global points touch an edge of the map, that side is pushed out and the map recomputed.
+async function zoomFull() {
   if (!S.sigma.spec) return;
-  const v = currentView();
-  const full = { ...v, x_range: fullRange(v.x_name), y_range: fullRange(v.y_name) };
-  if (JSON.stringify([full.x_range, full.y_range]) === JSON.stringify([v.x_range, v.y_range])) {
-    $("sigma-note").textContent = "Already showing the whole region.";
-    return;
+  const id = fitting = performance.now(), start = currentView(), same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const live = () => fitting === id;
+  const note = (t) => { $("sigma-note").textContent = t; };
+  const fr = (n, r) => { const f = fullRange(n); return [Math.min(f[0], r[0]), Math.max(f[1], r[1])]; };
+  // the region is located on a coarse grid (fast); only the final view is computed at full resolution
+  let v = { ...start, x_range: fr(start.x_name, start.x_range), y_range: fr(start.y_name, start.y_range), n: Math.min(start.n, 41) };
+  zoomStack.push(start); updateZoomButtons();
+  try {
+    for (let round = 0; ; round++) {
+      if (!(await setView(v)) || !live()) return;
+      const e = await py.call("sigma_extent");
+      if (!live()) return;
+      if (!e) { note("No global points anywhere on this map, so there is no region to fit."); return; }
+      const sx = v.x_range[1] - v.x_range[0], sy = v.y_range[1] - v.y_range[0];
+      const grow = { ...v, x_range: [v.x_range[0] - (e.left ? sx / 2 : 0), v.x_range[1] + (e.right ? sx / 2 : 0)],
+                     y_range: [v.y_range[0] - (e.bottom ? sy / 2 : 0), v.y_range[1] + (e.top ? sy / 2 : 0)] };
+      if (e.left || e.right || e.bottom || e.top) {
+        if (round < 3) { note("The global region reaches the edge of the map: widening it…"); v = grow; continue; }
+        const sides = ["left", "right", "bottom", "top"].filter((k) => e[k]).join(", ");
+        if (!(await setView({ ...v, n: start.n })) || !live()) return;
+        note(`Widened 3 times and the global region still reaches the ${sides} edge: it may not be bounded that way. Showing the widest map.`);
+        return;
+      }
+      // the region is inside: trim an axis to the region plus a margin, when that saves a lot of space
+      const trim = (r, ext, span, n) => {
+        const pad = Math.max(0.08 * (ext[1] - ext[0]), (3 * span) / (n - 1));
+        const t = [Math.max(r[0], ext[0] - pad), Math.min(r[1], ext[1] + pad)];
+        return t[1] - t[0] < 0.7 * span ? t.map((q) => nice(q, t[1] - t[0])) : r;
+      };
+      const fit = { ...v, x_range: trim(v.x_range, e.x, sx, v.n), y_range: trim(v.y_range, e.y, sy, v.n), n: start.n };
+      if (!(await setView(fit)) || !live()) return;
+      if (same([start.x_range, start.y_range], [S.sigma.spec.x_range, S.sigma.spec.y_range])) {
+        zoomStack.pop(); updateZoomButtons();       // nothing changed, so nothing to undo
+        note("This already shows the whole global region.");
+      }
+      return;
+    }
+  } finally {
+    if (live()) fitting = 0;
   }
-  goView(full, true);
 }
 
 const nice = (v, span) => { const q = 10 ** (Math.floor(Math.log10(span)) - 3); return +(Math.round(v / q) * q).toPrecision(12); };
