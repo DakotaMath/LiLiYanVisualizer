@@ -45,7 +45,9 @@ def build() -> Path:
     for name, pairs in {
         "index.html": [('href="style.css"', f'href="style.css?v={v}"'), ('src="app.js"', f'src="app.js?v={v}"')],
         "app.js": [('from "./view3d.js"', f'from "./view3d.js?v={v}"'), ('from "./path.js"', f'from "./path.js?v={v}"'),
-                   ("py-worker.js?role=${role}", f"py-worker.js?v={v}&role=${{role}}")],
+                   ("py-worker.js?role=${role}", f"py-worker.js?v={v}&role=${{role}}"),
+                   ('new Worker("sigma-worker.js"', f'new Worker("sigma-worker.js?v={v}"')],
+        "sigma-worker.js": [('from "./sigma-kernel.js"', f'from "./sigma-kernel.js?v={v}"')],
         "py-worker.js": [('fetch("swirl.zip"', f'fetch("swirl.zip?v={v}"')],
     }.items():
         f = OUT / name

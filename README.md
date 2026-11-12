@@ -29,8 +29,9 @@ equations with swirl*, which is in `docs/`.
     and "point the 3D camera along n". The 2D slice is hidden until "Show 2D slice".
 
 - Milestone 5: the Σ-map tab. Pick two of the six data; the other four stay at the
-  current solution's values. The grid is shot to both poles in the background on all
-  cores (about 7 s for 101 × 101), with progress and cancel. Views:
+  current solution's values. The grid is shot to both poles in the background, many points
+  at once (`core/sigma_fast.py`) on up to 8 processes (about 0.5 s for 101 × 101, 1 s for
+  201 × 201), with progress and cancel. Views:
   - global / not global (blow-up before a pole, or a pole failing the terminal test);
   - the pole type G/R/L1/L2 at each pole;
   - the pole exponents μ₊, μ₋ with contours at ½, ⅔, 1 and the velocity classes they separate.

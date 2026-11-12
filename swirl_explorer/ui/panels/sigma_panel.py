@@ -264,7 +264,9 @@ class SigmaMapPanel(QWidget):
             QTimer.singleShot(150, lambda: self.compute(base))
             return
         spec = self.spec(base if isinstance(base, Params) else None)
-        workers = 1 if spec.nx * spec.ny < 600 else max(1, min((os.cpu_count() or 2) - 1, 32))
+        # the batched kernel does a 51 x 51 map in ~0.3 s on one core; past that a warm pool of up
+        # to 8 processes is fastest (more processes cost more to start than they save)
+        workers = 1 if spec.nx * spec.ny < 2500 else max(1, min((os.cpu_count() or 2) - 1, 8))
         self.running = True
         self.compute_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
