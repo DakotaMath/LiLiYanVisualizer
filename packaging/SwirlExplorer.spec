@@ -20,7 +20,7 @@ hidden = [
     "pyvistaqt", "scipy.integrate._ode", "scipy.integrate._dop",
     "matplotlib.backends.backend_qtagg", "matplotlib.backends.backend_agg",
     "imageio.plugins.ffmpeg", "imageio_ffmpeg",
-] + collect_submodules("swirl_explorer")
+] + collect_submodules("swirl_explorer", filter=lambda name: not name.startswith("swirl_explorer.web"))
 
 datas = (collect_data_files("imageio_ffmpeg", include_py_files=False)      # the ffmpeg binary
          + collect_data_files("pyvista", includes=["**/*.json", "**/*.txt"])
@@ -29,6 +29,7 @@ datas = (collect_data_files("imageio_ffmpeg", include_py_files=False)      # the
 
 # large parts of Qt and the scientific stack the app never touches
 excludes = [
+    "swirl_explorer.web",                       # the browser front end is not part of the desktop app
     "tkinter", "IPython", "jupyter", "notebook", "ipywidgets", "trame", "trame_vtk", "trame_vuetify",
     "pytest", "sphinx", "pygame", "PIL.ImageQt", "pandas", "sympy", "numba", "PyQt5", "PyQt6",
     "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick", "PySide6.QtWebChannel",

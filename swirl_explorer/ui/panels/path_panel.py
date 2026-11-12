@@ -470,7 +470,7 @@ class PathPanel(QWidget):
                 f"<span style='color:{style.c()['muted']}'>A path needs two keyframes. Add the current solution "
                 "with <b>+ Add current</b>, or <b>shift-click</b> points on the Σ-map. Type values in the table "
                 "to make them exact. The timeline then shows where along the path the solution is global "
-                "(green), global with a special pole (teal) or not global (red).</span>")
+                "(green), global with a special pole (teal) or not global (grey / olive).</span>")
         self._update_length()
 
     def _cell_edited(self, item: QTableWidgetItem):

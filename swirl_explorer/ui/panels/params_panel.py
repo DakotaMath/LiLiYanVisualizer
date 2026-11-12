@@ -6,20 +6,11 @@ from PySide6.QtWidgets import (QWidget, QGridLayout, QLabel, QSlider, QDoubleSpi
                                QVBoxLayout, QHBoxLayout, QPushButton, QToolButton, QMenu,
                                QInputDialog, QSizePolicy)
 
-from ...core.params import Params, PARAM_NAMES
+from ...core.params import PARAM_UI, DEFAULT_RANGES, Params, PARAM_NAMES
 from ...core.edges import gamma_minus
 from ...viz import style
 
-LABELS = {
-    "c1": ("c₁", "Taylor constant of Q: P_c = c₁(1−x) + c₂(1+x) + c₃(1−x²)"),
-    "c2": ("c₂", "Taylor constant of Q (north side)"),
-    "c3": ("c₃", "Taylor constant of Q (quadratic part)"),
-    "gamma": ("γ = U(x₀)", "meridional circulation at the base point (the brief's Γ)"),
-    "A": ("A = f(x₀)", "swirl at the base point"),
-    "kappa": ("κ = fₓ(x₀)", "swirl rate at the base point (the brief's γ)"),
-}
-DEFAULT_RANGES = {"c1": (-1.0, 3.0), "c2": (-1.0, 3.0), "c3": (-4.0, 4.0),
-                  "gamma": (-3.0, 3.0), "A": (-3.0, 3.0), "kappa": (-5.0, 5.0)}
+LABELS = PARAM_UI          # (label, tooltip) per datum; shared with the browser version
 SLIDER_STEPS = 2000
 
 

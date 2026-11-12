@@ -12,7 +12,9 @@ from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QGroupBox, QCo
                                QPushButton)
 
 from ...viz.scene_compute import SceneSettings, compute_numeric, build_scene
-from ...viz.scene3d import COLOR_BY, STRATUM_COLORS, VTK_TITLES
+from ...viz.scene3d import COLOR_BY
+from ...viz.scene_draw import (ISO_FIELDS, draw_scene, draw_slice_plane, clear_slice_plane, oblique_camera,
+                               pole_camera)
 from ...viz import style
 
 try:                                    # the 3D view needs an OpenGL context
@@ -21,7 +23,6 @@ try:                                    # the 3D view needs an OpenGL context
 except Exception:                       # pragma: no cover
     HAVE_PV = False
 
-ISO_FIELDS = {"speed": "|u|", "swirl": "swirl f / sin θ", "helicity": "helicity u·ω"}
 
 
 class _SceneWorker(QObject):
@@ -153,7 +154,7 @@ class View3DPanel(QWidget):
                 ("show_iso", "isosurface", "level set of the field chosen below"),
                 ("show_selfsim", "self-similar copies", "the seed-centre streamline and its rescalings λX "
                                                          "(also streamlines, since u is (−1)-homogeneous)"),
-                ("clip", "cut away the half y > 0", "clip lines and surfaces by the plane y = 0")):
+                ("clip", "cut away the near half (y < 0)", "clip lines and surfaces by the plane y = 0; the half facing the default camera goes")):
             c = QCheckBox(text)
             c.setToolTip(tip)
             c.setChecked(getattr(self.settings, key))
@@ -330,15 +331,12 @@ class View3DPanel(QWidget):
 
     def _view_from_pole(self):
         if self.plotter is not None:
-            self.plotter.camera_position = [(0, 0, 6), (0, 0, 0), (0, 1, 0)]
-            self.plotter.reset_camera(bounds=(-1.1, 1.1, -1.1, 1.1, -1.3, 1.3))
+            pole_camera(self.plotter)
             self.plotter.render()
 
     def _reset_camera(self):
         if self.plotter is not None:
-            self.plotter.camera_position = [(2.7, -2.9, 2.4), (0, 0, 0), (0, 0, 1)]
-            self.plotter.reset_camera(bounds=(-1.1, 1.1, -1.1, 1.1, -1.3, 1.3))
-            self.plotter.camera.zoom(1.85)
+            oblique_camera(self.plotter)
             self.plotter.render()
 
     # ---------------------------------------------------------------- rendering
@@ -357,149 +355,16 @@ class View3DPanel(QWidget):
             return
         self._last = data
         s = self.settings
-        for n in list(pl.actors):
-            if n.startswith("sx_"):
-                pl.remove_actor(n, render=False)
-        for title in list(pl.scalar_bars.keys()):      # the slice keeps its own bar ("slice u.n")
-            if title not in ("slice u.n", "slice rho*u.n"):
-                pl.remove_scalar_bar(title)
-        P = style.c()
-        pl.add_mesh(data.outline, color=P["outline"], line_width=1, name="sx_outline", pickable=False)
-        for (mesh, col, lab), nm in zip(data.axis, ("sx_axisN", "sx_axisS")):
-            pl.add_mesh(mesh, color=col, name=nm, smooth_shading=True)
-        for (mesh, col, lab), z, nm in zip(data.axis, (1.1, -1.1), ("sx_labN", "sx_labS")):
-            pl.add_point_labels(np.array([[0, 0, z]]), [lab], name=nm, text_color="white", font_size=13,
-                                shape_color=col, shape_opacity=0.95, show_points=False, always_visible=False)
-        if s.clip:
-            disc = pv.Disc(center=(0, 0, 0), normal=(0, 1, 0), inner=0.0, outer=data.domain.R, c_res=72)
-            pl.add_mesh(disc, color=P["cut_plane"], opacity=0.07, name="sx_cutplane")
-        cs = data.color_spec
-        hi = max(abs(cs["clim"][0]), abs(cs["clim"][1]))
-        fmt = "%.0f" if hi >= 100 else "%.3g"
-        coloured = (s.show_streamlines and not ((s.show_selfsim and data.selfsim)
-                                               or (s.show_vortex and data.vortex is not None))) \
-            or (s.show_surface and data.surface is not None)
-        self.color_by.setEnabled(bool(coloured))
-        self.color_by.setToolTip("" if coloured else "nothing on screen is colour-mapped right now "
+        drawn = draw_scene(pl, data, s, show_handle=self.show_handle.isChecked(),
+                           slice_shown=self.chk_slice.isChecked())
+        self.color_by.setEnabled(drawn.coloured)
+        self.color_by.setToolTip("" if drawn.coloured else "nothing on screen is colour-mapped right now "
                                  "(streamlines are dimmed while overlays are shown)")
-        if coloured:
-            pl.add_text(VTK_TITLES[s.color_by], position=(0.04, 0.08), viewport=True, font_size=8,
-                        color=P["view_text"], name="sx_bartitle")
-        bar = dict(title="", color=P["view_text"], vertical=False, position_x=0.04,
-                   position_y=0.02, height=0.045, width=0.42, title_font_size=1, label_font_size=10,
-                   n_labels=5, fmt=fmt)
-        first = True
-
-        def add_coloured(mesh, name, **kw):
-            nonlocal first
-            if mesh is None or mesh.n_points == 0:
-                return
-            pl.add_mesh(mesh, scalars="value", cmap=cs["cmap"], clim=cs["clim"], log_scale=cs["log_scale"],
-                        name=name, show_scalar_bar=first, scalar_bar_args=bar, nan_opacity=0.0, **kw)
-            first = False
-
-        overlays = bool((s.show_selfsim and data.selfsim) or (s.show_vortex and data.vortex is not None))
-        if data.streamlines is not None:
-            if overlays:
-                pl.add_mesh(data.streamlines, color=P["outline"], line_width=1, opacity=0.5, name="sx_streamlines")
-            else:
-                add_coloured(data.streamlines.tube(radius=0.007, n_sides=10), "sx_streamlines",
-                             smooth_shading=True)
-                if data.arrows is not None:
-                    add_coloured(data.arrows, "sx_arrows", smooth_shading=True)
-        if data.origin_ball is not None:
-            pl.add_mesh(data.origin_ball, color="#8a8c92", ambient=0.3, name="sx_origin")
-            pl.add_point_labels(np.array([[-0.75, 0.0, -0.3]]), ["origin (cut out)"],
-                                name="sx_origin_lab", font_size=11, text_color=P["view_text"], shape_opacity=0.0,
-                                show_points=False, always_visible=False)
-        for i, (arc, sense) in enumerate(data.swirl_arcs):
-            pl.add_mesh(arc, color="#e65100", name=f"sx_arc{i}", smooth_shading=True)
-        if s.seed_mode in ("ring", "rings") and self.show_handle.isChecked():
-            c = np.asarray(s.sphere_center, float)
-            guide = pv.Line((0.0, 0.0, c[2]), tuple(c))
-            pl.add_mesh(guide, color="#d81b60", line_width=2, name="sx_guide")
-
-        add_coloured(data.surface, "sx_surface", opacity=s.opacity, smooth_shading=True)
-        if data.iso is not None and data.iso.n_points:   # one neutral colour: does not compete with the lines
-            pl.add_mesh(data.iso, color="#9fb3c8", opacity=s.opacity, smooth_shading=True, name="sx_iso")
-        if data.vortex is not None and data.vortex.n_points:
-            pl.add_mesh(data.vortex.tube(radius=0.006, n_sides=8), color="#2e9d3a", name="sx_vortex",
-                        smooth_shading=True)
-        if data.glyphs is not None:
-            pl.add_mesh(data.glyphs, color=P["view_text"], name="sx_glyphs", smooth_shading=True)
-        lam = (1.0, 0.6, 0.8, 1.25)
-        for i, L in enumerate(data.selfsim[:4]):
-            tube = pv.lines_from_points(L).tube(radius=(0.016, 0.006, 0.008, 0.011)[i], n_sides=10)
-            pl.add_mesh(tube, color=P["view_text"], name=f"sx_selfsim{i}",
-                        smooth_shading=True)
-        if data.selfsim:
-            fr = (0.85, 0.15, 0.4, 0.65)
-            ends = np.array([L[int(fr[i] * (len(L) - 1))] for i, L in enumerate(data.selfsim[:4])])
-            pl.add_point_labels(ends, ["X(s)"] + [f"{l}·X" for l in lam[1:len(ends)]], name="sx_selfsim_lab",
-                                font_size=12, text_color=P["view_text"], shape_opacity=0.6,
-                                shape_color=P["view_bg"],
-                                show_points=False, always_visible=False)
-        sw = "<span style='color:{c};font-size:15px'>■</span>&nbsp;"
-        import matplotlib
-        cm = matplotlib.colormaps[cs["cmap"]] if isinstance(cs["cmap"], str) else cs["cmap"]
-        ramp = "".join(f"<span style='color:{matplotlib.colors.to_hex(cm(t))};font-size:15px'>■</span>"
-                       for t in (0.05, 0.35, 0.65, 0.95)) + "&nbsp;"
-        items = []
-        if s.show_streamlines:
-            if overlays:
-                items.append(sw.format(c=style.c()["outline"]) + f"streamlines of u ({data.n_lines}), dimmed "
-                             "while vortex lines / rescalings are shown")
-            else:
-                items.append(ramp + f"streamlines of u ({data.n_lines}), coloured by "
-                             f"{COLOR_BY[s.color_by]} (colour bar); small cones point downstream")
-        if s.show_surface and data.surface is not None:
-            items.append(ramp + f"stream surface (translucent), coloured by {COLOR_BY[s.color_by]}")
-        if s.show_iso and data.iso is not None:
-            items.append(sw.format(c="#9fb3c8") + f"isosurface {ISO_FIELDS[s.iso_field]} = {data.iso_level:.3g}")
-        if s.show_vortex and data.vortex is not None:
-            items.append(sw.format(c="#2e9d3a") + "vortex lines (curves along ω)")
-        if s.show_glyphs and data.glyphs is not None:
-            items.append(sw.format(c=style.c()["view_text"]) + "arrows: direction of u; length grows with log |u|")
-        if s.show_selfsim and data.selfsim:
-            items.append(sw.format(c=style.c()["view_text"]) + "thick: one streamline X(s); thin: its rescalings λX "
-                         "(labelled), also streamlines since u is (−1)-homogeneous")
-        if self.show_handle.isChecked():
-            items.append(sw.format(c="#d81b60") + ("magenta handle: drag it; its distance from the axis is the "
-                                                     "ring radius" if s.seed_mode in ("rings", "ring") else
-                                                     "magenta ball: drag to move the seeds, handles resize"))
-        items.append(sw.format(c=STRATUM_COLORS["G"]) + "axis coloured by pole type (blue G, red R, amber L1, "
-                     "purple L2); big cone = direction of the flow along the axis · " + sw.format(c="#9a9ca3") + f"cut-outs: ball r &lt; {s.r_min:g} around 0, "
-                     f"cylinder ρ &lt; {s.axis_a:g} around the axis"
-                     + (" · half y > 0 cut away" if s.clip else ""))
-        if data.swirl_arcs:
-            items.append(sw.format(c="#e65100") + "orange arcs: sense of the swirl u_φ near each pole")
-        items.append(sw.format(c=style.c()["origin"]) + "grey ball: origin cut out (u ~ 1/|X| is singular there)")
-        if self.chk_slice.isChecked():
-            items.append("<span style='color:#b2182b;font-size:15px'>■</span><span style='color:#2166ac;"
-                         "font-size:15px'>■</span>&nbsp;slice plane: red = flow through it toward +n, blue = "
-                         "against n; dark lines = in-plane streamlines")
-        items.append(sw.format(c=style.c()["outline"]) + "thin ellipses: equator and cut-plane meridian of |X| = 1")
+        items = drawn.legend
         half = (len(items) + 1) // 2
         cols = ["<br>".join(items[:half]), "<br>".join(items[half:])]
         self.legend.setText(f"<table width='100%'><tr><td valign='top' width='50%'>{cols[0]}</td>"
                             f"<td valign='top'>{cols[1]}</td></tr></table>")
-        shown = []
-        if s.show_streamlines:
-            shown.append(f"Streamlines of u from {data.n_lines} seeds; cones show the flow direction")
-        if s.show_surface and data.surface is not None:
-            shown.append("Stream surface swept from a seed line")
-        if s.show_vortex and data.vortex is not None:
-            shown.append("Magenta: vortex lines (curves along the vorticity)")
-        if s.show_iso and data.iso is not None:
-            fld = {"speed": "speed", "swirl": "swirl f/sin(theta)", "helicity": "helicity"}[s.iso_field]
-            shown.append(f"Translucent surface: {fld} = {data.iso_level:.3g}")
-        if s.show_glyphs and data.glyphs is not None:
-            shown.append("Grey arrows: direction of u (darker = faster)")
-        if s.show_selfsim and data.selfsim:
-            shown.append("Black: one streamline X(s).  Orange: its rescalings 0.6X, 0.8X, 1.25X,\n"
-                         "  which are streamlines too because u is (-1)-homogeneous")
-        shown.append("Yellow ball: drag to move the seeds (handles resize it)")
-        shown.append("Axis colour = pole type: blue G, red R, amber L1, purple L2")
 
         if not self._camera_set:
             self._reset_camera()
@@ -529,11 +394,7 @@ class View3DPanel(QWidget):
 
     def _slice_toggled(self, on):
         if not on and self.plotter is not None:
-            for n in ("sl_plane", "sl_lines", "sl_normal", "sl_outline"):
-                self.plotter.remove_actor(n, render=False)
-            for t in ("slice u.n", "slice rho*u.n"):
-                if t in self.plotter.scalar_bars:
-                    self.plotter.remove_scalar_bar(t)
+            clear_slice_plane(self.plotter)
             self.plotter.render()
         else:
             self._draw_slice(render=True)
@@ -543,45 +404,10 @@ class View3DPanel(QWidget):
         pl = self.plotter
         if pl is None:
             return
-        for n in ("sl_plane", "sl_lines", "sl_normal", "sl_outline"):
-            pl.remove_actor(n, render=False)
-        for t in ("slice u.n", "slice rho*u.n"):
-            if t in pl.scalar_bars:
-                pl.remove_scalar_bar(t)
         if not self.chk_slice.isChecked() or self._slice is None:
-            if render:
-                pl.render()
-            return
-        import pyvista as pv
-        data, lines = self._slice
-        X = data.X
-        grid = pv.StructuredGrid(X[..., 0], X[..., 1], X[..., 2])
-        if data.show is None:
-            data.set_display(False)
-        grid["un"] = data.show.ravel(order="F")
-        m = data.clim
-        pl.add_mesh(grid, scalars="un", cmap="RdBu_r", clim=(-m, m), nan_opacity=0.0, opacity=0.95,
-                    show_scalar_bar=False, name="sl_plane", smooth_shading=False, show_edges=False,
-                    lighting=False,                       # unlit: the same colours as the 2D slice
-                    scalar_bar_args=dict(title="slice u.n" if data.show_label == "u·n" else "slice rho*u.n",
-                                         n_labels=3,
-                                         vertical=False, position_x=0.53, position_y=0.02, width=0.42,
-                                         height=0.045, color=style.c()["view_text"], fmt="%.2g",
-                                         title_font_size=11, label_font_size=10))
-        d = data.spec.offset
-        if abs(d) < 1.0:                               # the region is the unit ball
-            rr = math.sqrt(1.0 - d * d)
-            th = np.linspace(0, 2 * np.pi, 145)
-            ring = data.spec.to_world(rr * np.cos(th), rr * np.sin(th))
-            pl.add_mesh(pv.lines_from_points(ring), color="#f2c14e", line_width=2, name="sl_outline")
-        lift = 0.006 * data.spec.normal                # draw the lines just above the plane (no z-fighting)
-        polys = [data.spec.to_world(L[:, 0], L[:, 1]) + lift for L in lines[::2] if len(L) > 1]
-        if polys:
-            from ...viz.scene3d import _polylines
-            pl.add_mesh(_polylines(polys), color="#111111", line_width=1.0, name="sl_lines")
-        c, n = data.spec.center, data.spec.normal
-        pl.add_mesh(pv.Arrow(start=c, direction=n, scale=0.35, tip_radius=0.08, shaft_radius=0.025),
-                    color="#f2c14e", name="sl_normal")
+            clear_slice_plane(pl)
+        else:
+            draw_slice_plane(pl, *self._slice)
         if render:
             pl.render()
 

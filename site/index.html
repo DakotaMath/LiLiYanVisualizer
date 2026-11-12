@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swirl Explorer</title>
+<meta name="description" content="Axisymmetric (−1)-homogeneous solutions of the stationary Navier–Stokes equations with swirl, explored in the browser.">
+<link rel="icon" href="swirl.png">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="app">
+  <header id="menubar">
+    <span class="brand"><img src="swirl.png" alt=""> Swirl Explorer</span>
+    <span class="subtitle">axisymmetric (−1)-homogeneous Navier–Stokes with swirl</span>
+    <span class="spacer"></span>
+    <button id="btn-open" title="open a session file (.json), also from the desktop app">Open session…</button>
+    <button id="btn-save" title="download everything as a session file (.json); the desktop app opens it too">Save session</button>
+    <button id="btn-theme" title="switch between the dark and the light theme">Light theme</button>
+    <button id="btn-intro" title="show the getting-started card">Help</button>
+    <button id="btn-help" title="conventions and how this page works">Conventions</button>
+    <input id="file-open" type="file" accept=".json,application/json" hidden>
+  </header>
+
+  <aside id="left">
+    <h2 class="dock-title">Parameters</h2>
+    <section id="intro" class="group intro" hidden>
+      <h3>Getting started <button id="intro-close" class="x" title="hide this card (Help brings it back)">×</button></h3>
+      <ul>
+        <li>Move a <b>slider</b> or type a value: the solution, the 3D view and the profiles follow. <b>Presets</b> jump to the book's examples.</li>
+        <li>With <b>lock to global solutions</b> on, edits stop at the edge of the global set.</li>
+        <li>The <b>Σ-map</b> tab shows which data are global; click it to jump there, shift-click to add a path keyframe.</li>
+        <li><b>Show 2D slice</b> cuts the flow with a plane; <b>Path &amp; movie</b> animates the data along keyframes.</li>
+        <li>Everything runs in your browser; <b>Save session</b> files open in the desktop app too.</li>
+      </ul>
+    </section>
+    <section class="group">
+      <h3>Data at the base point</h3>
+      <div id="param-grid" class="param-grid"></div>
+      <div class="row wrap">
+        <label class="chk" title="a slider or typed value that would leave the global set stops at its edge (the last global value in that direction)"><input id="lock" type="checkbox" checked> lock to global solutions</label>
+        <label class="chk" title="show the min/max of each slider"><input id="show-ranges" type="checkbox"> edit slider ranges</label>
+      </div>
+      <div id="lock-note" class="note" hidden></div>
+    </section>
+    <details id="presets-box" class="group" open>
+      <summary><h3>Presets</h3></summary>
+      <div id="presets" class="preset-grid"></div>
+    </details>
+    <details id="notation" class="notation" open><summary><b>Notation</b></summary> x = cos θ; the poles x = ±1 are the symmetry axis, d = sin θ is the distance
+      to it. c<sub>1</sub>, c<sub>2</sub>, c<sub>3</sub>: Taylor constants of the potential Q at the base point,
+      Q ≈ c<sub>1</sub>(1−x) + c<sub>2</sub>(1+x) + c<sub>3</sub>(1−x<sup>2</sup>). γ = U, A = f, κ = f<sub>x</sub>
+      at the base point, where U = u<sub>θ</sub> sin θ and f = u<sub>φ</sub> sin θ. z solves z′′ = W z with
+      W = 1 + Q/2, and h = z′/z.</details>
+    <section class="group status">
+      <h3>Current solution</h3>
+      <div id="st-head">—</div>
+      <div id="st-north"></div>
+      <div id="st-south"></div>
+    </section>
+  </aside>
+
+  <main id="center">
+    <div class="tabbar">
+      <button class="tab active" data-tab="view3d">3D + slice</button>
+      <button class="tab" data-tab="sigma">Σ-map</button>
+      <span class="spacer"></span>
+      <button id="btn-path" class="corner" title="keyframes in parameter space, preview and video export (bottom panel)">Path &amp; movie</button>
+      <button id="btn-slice" class="corner" title="show the 2D slice plane beside the 3D view, with its controls">Show 2D slice</button>
+    </div>
+    <div id="tab-view3d" class="tabpage">
+      <div class="split">
+        <div id="view3d-wrap">
+          <canvas id="view3d"></canvas>
+          <div id="labels3d"></div>
+          <div id="colorbar" class="colorbar"></div>
+          <div id="busy3d" class="busy" hidden>computing…</div>
+        </div>
+        <div id="slice-wrap" hidden>
+          <img id="slice-img" alt="the 2D slice">
+          <div id="busy-slice" class="busy" hidden>computing…</div>
+        </div>
+      </div>
+    </div>
+    <div id="tab-sigma" class="tabpage" hidden>
+      <div id="sigma-hover" class="hoverline">Hover the map to read a point; click to jump there, drag to move; shift-click adds a path keyframe.</div>
+      <div id="sigma-note" class="note-line"></div>
+      <div id="sigma-wrap">
+        <img id="sigma-img" alt="the Σ-map" draggable="false">
+        <div id="sigma-cross-h" class="cross" hidden></div>
+        <div id="sigma-cross-v" class="cross" hidden></div>
+      </div>
+    </div>
+  </main>
+
+  <aside id="right">
+    <div class="tabbar small" id="right-tabs">
+      <button class="rtab active" data-rtab="profiles">ODE profiles</button>
+      <button class="rtab" data-rtab="ctl3d">3D controls</button>
+      <button class="rtab" data-rtab="ctlslice" id="rtab-slice" hidden>Slice controls</button>
+      <button class="rtab" data-rtab="ctlsigma">Σ-map controls</button>
+    </div>
+
+    <div id="rtab-profiles" class="rpage">
+      <div class="row wrap">
+        <label>x-axis <select id="pl-xvar"></select></label>
+        <label>mode <select id="pl-mode"></select></label>
+        <select id="pl-pole" title="which pole the log–log view zooms in on"><option value="north">north pole</option><option value="south">south pole</option></select>
+      </div>
+      <div class="row wrap" id="pl-quantities"></div>
+      <div class="row wrap">
+        <label class="chk" title="overlay predicted pole limits / rates (dashed)"><input id="pl-overlay" type="checkbox" checked> predictions</label>
+        <button id="pl-pin" title="keep the current solution as a comparison curve">Pin current</button>
+        <button id="pl-clear">Clear pins</button>
+        <select id="pl-export" title="download the plot"><option value="">Export ▾</option><option value="png">PNG…</option><option value="svg">SVG…</option><option value="csv">CSV…</option></select>
+        <span id="pl-pins" class="muted"></span>
+      </div>
+      <img id="profiles-img" alt="ODE profiles">
+    </div>
+
+    <div id="rtab-ctl3d" class="rpage" hidden>
+      <section class="group"><h3>What you see</h3><div id="legend3d" class="legend"></div></section>
+      <section class="group">
+        <h3>Seeds</h3>
+        <div class="form">
+          <label>seed shape <select id="s-seed_mode">
+            <option value="rings">rings at 5 heights</option><option value="ring">one ring around the axis</option>
+            <option value="sphere">points in a ball</option><option value="disc">disc rake</option><option value="line">line rake</option>
+          </select></label>
+          <label>number <input id="s-n_seeds" type="number" min="1" max="600" value="40"></label>
+          <label title="the ring radius / ball centre (drag handle in the desktop app)">seed centre x, y, z
+            <span class="triple"><input id="s-cx" type="number" step="0.05" value="0.35"><input id="s-cy" type="number" step="0.05" value="0.25"><input id="s-cz" type="number" step="0.05" value="0.45"></span></label>
+          <label>ball / disc radius <input id="s-sphere_radius" type="number" step="0.02" min="0.02" max="0.9" value="0.18"></label>
+        </div>
+      </section>
+      <section class="group">
+        <h3>Colour lines and surfaces by</h3>
+        <select id="s-color_by"></select>
+      </section>
+      <section class="group">
+        <h3>Show</h3>
+        <div id="layers" class="col">
+          <label class="chk" title="integral curves of u from the seeds"><input type="checkbox" data-k="show_streamlines" checked> streamlines</label>
+          <label class="chk" title="surface swept by streamlines from a seed line"><input type="checkbox" data-k="show_surface"> stream surface</label>
+          <label class="chk" title="integral curves of the vorticity ω from the same seeds"><input type="checkbox" data-k="show_vortex"> vortex lines</label>
+          <label class="chk" title="the seed-centre streamline and its rescalings λX (also streamlines, since u is (−1)-homogeneous)"><input type="checkbox" data-k="show_selfsim"> self-similar copies</label>
+          <label class="chk" title="clip lines and surfaces by the plane y = 0; the half facing the default camera goes"><input type="checkbox" data-k="clip" checked> cut away the near half (y &lt; 0)</label>
+        </div>
+        <p class="muted small">Arrows and isosurfaces are in the desktop app only.</p>
+      </section>
+      <section class="group">
+        <h3>Slice plane <span class="muted small">(more with Show 2D slice ↗)</span></h3>
+        <label class="chk" title="the plane coloured by u·n with its in-plane streamlines"><input id="s-show_slice" type="checkbox"> show the slice plane here</label>
+      </section>
+      <section class="group">
+        <h3>Region</h3>
+        <div class="form">
+          <label>shape <select id="s-shape"><option value="ball">ball |X| ≤ 1</option><option value="box">box |X|∞ ≤ 1</option></select></label>
+          <label title="excluded ball around the origin (u ~ 1/r)">origin cut-out r <input id="s-r_min" type="number" step="0.02" min="0.01" max="0.8" value="0.12"></label>
+          <label title="excluded cylinder around the axis (u singular there)">axis cut-out ρ <input id="s-axis_a" type="number" step="0.005" min="0.002" max="0.3" value="0.025"></label>
+          <label>surface opacity <input id="s-opacity" type="range" min="5" max="100" value="45"></label>
+        </div>
+      </section>
+      <div class="row">
+        <button id="cam-oblique">Oblique view</button>
+        <button id="cam-pole">View from N pole</button>
+      </div>
+      <p id="info3d" class="muted small"></p>
+    </div>
+
+    <div id="rtab-ctlslice" class="rpage" hidden>
+      <section class="group">
+        <h3>Plane orientation</h3>
+        <div id="sl-presets" class="col"></div>
+        <div class="form">
+          <label>azimuth <span class="slide"><input id="sl-az" type="range" min="-180" max="180" step="1" title="azimuth of the normal (degrees, from +x toward +y)"><input id="sl-az-n" type="number" step="1" min="-180" max="180">°</span></label>
+          <label>elevation <span class="slide"><input id="sl-el" type="range" min="-90" max="90" step="1" title="elevation of the normal above the equator (degrees)"><input id="sl-el-n" type="number" step="1" min="-90" max="90">°</span></label>
+          <label>offset <span class="slide"><input id="sl-off" type="range" min="-0.95" max="0.95" step="0.01" title="offset of the plane from the origin along its normal"><input id="sl-off-n" type="number" step="0.01" min="-0.95" max="0.95"></span></label>
+        </div>
+        <p id="sl-normal" class="muted small"></p>
+      </section>
+      <section class="group">
+        <h3>Show on the plane</h3>
+        <div class="col">
+          <label class="chk"><input id="sl-un" type="checkbox" checked> colour: normal velocity u·n</label>
+          <label class="chk" title="plot ρ·(u·n): removes the 1/ρ blow-up at the axis so the rest is visible"><input id="sl-rho" type="checkbox"> scale by ρ (distance to the axis)</label>
+          <label class="chk" title="colour by sign(v)·log(1 + |v|/v₀): shows small and very large values together"><input id="sl-log" type="checkbox"> signed-log colour scale</label>
+          <label class="chk"><input id="sl-lines" type="checkbox" checked> streamlines of the in-plane flow</label>
+          <label class="chk" title="streaks along the in-plane flow direction (LIC)"><input id="sl-lic" type="checkbox"> texture (line-integral convolution)</label>
+          <label>line density <input id="sl-density" type="number" min="0.3" max="4" step="0.2" value="1.4"></label>
+        </div>
+      </section>
+      <button id="sl-view-n" title="look at the 3D view from the same side as this slice">Point the 3D camera along n</button>
+      <label class="chk" title="re-aim the 3D camera along n whenever the plane changes"><input id="sl-follow" type="checkbox"> 3D camera follows the slice</label>
+      <button id="sl-export">Export PNG</button>
+    </div>
+
+    <div id="rtab-ctlsigma" class="rpage" hidden>
+      <section class="group">
+        <h3>Map axes</h3>
+        <div class="form">
+          <label>horizontal <select id="sg-x"></select></label>
+          <label>from / to <span class="pair"><input id="sg-x0" type="number" step="0.1"><input id="sg-x1" type="number" step="0.1"></span></label>
+          <label>vertical <select id="sg-y"></select></label>
+          <label>from / to <span class="pair"><input id="sg-y0" type="number" step="0.1"><input id="sg-y1" type="number" step="0.1"></span></label>
+          <label title="points per axis; the browser shares the work between several background workers">grid <span class="pair"><input id="sg-n" type="number" min="11" max="401" step="10" value="101"> × same</span></label>
+        </div>
+        <p id="sg-fixed" class="muted small"></p>
+      </section>
+      <div class="row">
+        <button id="sg-compute" class="primary" title="shoot to both poles at every grid point, on background workers">Compute map</button>
+        <button id="sg-cancel" disabled>Cancel</button>
+      </div>
+      <div class="progress"><div id="sg-bar"></div></div>
+      <button id="sg-lens" title="x₀ = 0, c = 0, A = 0: the lens between γ₋(κ) and γ₊(κ), apex κ ≈ 4.1608">Book's lens (Figure 1.3): γ × κ at c = 0, A = 0</button>
+      <section class="group">
+        <h3>Show</h3>
+        <select id="sg-mode"><option value="global">global / not global</option><option value="strata">pole strata (north | south)</option><option value="mu">pole exponents μ₊ | μ₋</option></select>
+        <label class="chk"><input id="sg-edge" type="checkbox" checked> edge of the global region</label>
+        <label class="chk" id="sg-mu-wrap" title="μ = ½ dotted, ⅔ dashed, 1 dash-dot; always shown in the exponent view"><input id="sg-mu" type="checkbox"> μ contours on this view (north white, south amber)</label>
+      </section>
+      <section class="group"><h3>Reading the map</h3><div id="sg-explain" class="explain"></div></section>
+      <button id="sg-export">Export PNG</button>
+    </div>
+  </aside>
+
+  <section id="bottom" hidden>
+    <div id="bottom-grip" title="drag to resize the path panel"></div>
+    <h2 class="dock-title">Path</h2>
+    <div class="path-body">
+      <div class="path-left">
+        <div class="row wrap">
+          <button id="pa-add" title="append the current solution as a keyframe (shift-click on the Σ-map does the same for the clicked point)">+ Add current</button>
+          <button id="pa-set" title="overwrite the selected keyframe's values with the current solution (and the stored view, if ticked)">Overwrite with current</button>
+          <button id="pa-del">Remove</button>
+          <button id="pa-clear">Clear</button>
+          <label title="how the six data move between keyframes (spline needs three or more)">between keyframes: <select id="pa-interp"><option value="linear">linear</option><option value="spline">spline</option></select></label>
+        </div>
+        <div class="row wrap"><span>keyframes also store:</span>
+          <label class="chk" title="the 3D camera moves between keyframes; when off it stays where it is"><input id="pa-k-camera" type="checkbox"> camera</label>
+          <label class="chk" title="the slice plane turns / moves between keyframes; when off it stays where it is"><input id="pa-k-plane" type="checkbox"> slice plane</label>
+          <label class="chk" title="the streamline seeds move between keyframes; when off it stays where it is"><input id="pa-k-seeds" type="checkbox"> seeds</label>
+        </div>
+        <div class="table-wrap" title="click a value to type it; selecting a row moves to that keyframe; bold '(varies)': the data that change along the path"><table id="pa-table"><thead></thead><tbody></tbody></table></div>
+      </div>
+      <div class="path-right">
+        <div class="row wrap">
+          <button id="pa-first" title="first frame">⏮</button>
+          <button id="pa-play" title="preview: every view follows the path (frames are dropped if solving lags)">▶ Play</button>
+          <button id="pa-last" title="last frame">⏭</button>
+          <label title="frames along the path"><input id="pa-frames" type="number" min="2" max="5000" value="120"> frames</label>
+          <label title="frames per second"><input id="pa-fps" type="number" min="1" max="60" value="24"> fps</label>
+          <span id="pa-len" class="muted"></span>
+          <label class="chk"><input id="pa-loop" type="checkbox"> loop</label>
+          <span class="spacer"></span>
+          <label title="what a recorded video shows where the solution is not global">not-global frames in the video:
+            <select id="pa-policy"><option value="hold">hold the last global frame</option><option value="skip">leave out</option><option value="mark">show, labelled</option></select></label>
+          <button id="pa-video" title="record the 3D view along the path as a video file (MP4 or WebM)">Record video…</button>
+        </div>
+        <canvas id="pa-timeline" height="80"></canvas>
+        <div id="pa-frame" class="small"></div>
+        <div id="pa-events" class="small"></div>
+      </div>
+    </div>
+  </section>
+
+  <footer id="statusbar"><span id="sb-params"></span><span class="spacer"></span><span id="sb-info"></span></footer>
+</div>
+
+<div id="loading">
+  <div class="loading-box">
+    <img src="swirl.png" alt="" width="72" height="72">
+    <h1>Swirl Explorer</h1>
+    <p>Starting Python in your browser (Pyodide: numpy, scipy, matplotlib).<br>The first visit downloads about 40 MB; later visits are cached.</p>
+    <div class="progress"><div id="load-bar"></div></div>
+    <p id="load-msg" class="muted">loading…</p>
+  </div>
+</div>
+
+<dialog id="help">
+  <h2>Conventions</h2>
+  <p>Data at the base point x<sub>b</sub> (default the equator): c = Taylor constants of Q, γ = U(x<sub>b</sub>),
+    A = f(x<sub>b</sub>), κ = f<sub>x</sub>(x<sub>b</sub>). The task brief's Γ is γ here, and its γ is κ.</p>
+  <p>Pole types G / R / L1 / L2 and labels follow the monograph (Table 4.1) and docs/conventions.md.
+    A red <i>(uncertain)</i> after a pole type means the type was classified with confidence below 0.9: the
+    solution is close to a boundary between types (hover the pole line for the details).</p>
+  <h3>About this page</h3>
+  <p>This is the browser version of the Swirl Explorer desktop app. The same Python code (solver, pole
+    diagnostics, plots) runs in your browser through Pyodide; nothing is sent to a server. It is about
+    4–5 times slower than the desktop app, and the Σ-map is shared between several background workers.</p>
+  <p>Differences from the desktop app: no draggable seed or plane handles (type the values), no arrow glyphs or
+    isosurfaces in 3D, video recording (WebM/MP4 of the 3D view with the caption strip) instead of the composited
+    MP4 export.</p>
+  <p>Keyboard: Ctrl+O opens a session, Ctrl+S saves one.</p>
+  <form method="dialog"><button>Close</button></form>
+</dialog>
+
+<dialog id="landau-dlg">
+  <form method="dialog">
+    <h3>Landau family</h3>
+    <label>λ<sub>L</sub> (|λ<sub>L</sub>| ≥ 1 is global; U = 2(1−x²)/(λ<sub>L</sub>+x)):
+      <input id="landau-L" type="number" step="0.1" value="1.5" min="-100" max="100"></label>
+    <div class="row"><button id="landau-ok" value="ok" class="primary">OK</button><button value="cancel" formnovalidate>Cancel</button></div>
+  </form>
+</dialog>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

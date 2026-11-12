@@ -43,14 +43,17 @@ def make_rhs(p: Params) -> Callable[[float, np.ndarray], list]:
     lam = p.lam
     kap = p.kappa_line
 
+    cosh, tanh, exp = math.cosh, math.tanh, math.exp
+
     def rhs(t, y):
-        h, lz, f, Q, Qp = y
-        ch = math.cosh(t)
+        # plain floats: arithmetic on numpy scalars is several times slower (same IEEE results)
+        h, lz, f, Q, Qp = y.tolist() if hasattr(y, "tolist") else y
+        ch = cosh(t)
         return [1.0 + 0.5 * Q - h * h,
                 h,
-                kap * math.exp(-2.0 * lz),
+                kap * exp(-2.0 * lz),
                 Qp,
-                (lam - f * f + 2.0 * Q) / (ch * ch) - 4.0 * math.tanh(t) * Qp]
+                (lam - f * f + 2.0 * Q) / (ch * ch) - 4.0 * tanh(t) * Qp]
     return rhs
 
 
@@ -109,10 +112,13 @@ def shoot(p: Params, side: int, xi_max: float = DEFAULT_XI_MAX,
     target = side * xi_max
     last = {"t": xi0, "y": np.array(initial_state(p)), "blow": False}
 
+    isfinite = math.isfinite
+
     def solout(t, y):
         last["t"] = t
         last["y"] = y.copy()
-        if abs(y[0]) > H_BLOW or not np.all(np.isfinite(y)):
+        v = y.tolist()
+        if abs(v[0]) > H_BLOW or not all(map(isfinite, v)):
             last["blow"] = True
             return -1
         return 0

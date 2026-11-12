@@ -1,0 +1,61 @@
+# Publishes the browser version (site/ + the Python package, run by Pyodide in the visitor's
+# browser) to GitHub Pages. No server: GitHub serves static files only.
+#
+#  - On every pull request that touches the web version: test the bridge and build the site.
+#  - On a push to main (e.g. merging that pull request), or by hand: also publish it.
+#
+# One-time setup (repository owner): Settings > Pages > Build and deployment > Source: "GitHub Actions".
+name: Web version (GitHub Pages)
+
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", "swirl_explorer/**", "scripts/build_site.py", ".github/workflows/pages.yml"]
+  pull_request:
+    paths: ["site/**", "swirl_explorer/**", "scripts/build_site.py", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      # the bridge needs only what Pyodide provides: numpy, scipy, matplotlib (no Qt, no VTK)
+      - name: Test the browser bridge
+        run: |
+          python -m pip install --disable-pip-version-check numpy scipy matplotlib pillow pytest
+          python -m pytest -q tests/test_web_api.py tests/test_layout.py
+
+      - name: Build the site
+        run: python scripts/build_site.py
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v6
+      - id: deploy
+        uses: actions/deploy-pages@v5

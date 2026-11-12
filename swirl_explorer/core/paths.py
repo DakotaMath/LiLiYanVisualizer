@@ -277,8 +277,9 @@ def scan_path(path: ParamPath, n_frames: int, xi_max: float = 14.0, rtol: float 
             elif not prev.is_global and fs.is_global:
                 events.append(PathEvent(i, te, "enters_global", f"N {fs.north}, S {fs.south}"))
             elif fs.is_global:
-                events.append(PathEvent(i, te, "stratum_change",
-                                        f"N {prev.north}->{fs.north}, S {prev.south}->{fs.south}"))
+                changed = [f"{side} {a}->{b}" for side, a, b in (("north", prev.north, fs.north),
+                                                                  ("south", prev.south, fs.south)) if a != b]
+                events.append(PathEvent(i, te, "stratum_change", ", ".join(changed)))
             else:
                 events.append(PathEvent(i, te, "failure_change", _why(fs)))
         frames.append(fs)

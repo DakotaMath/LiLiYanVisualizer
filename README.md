@@ -59,8 +59,24 @@ equations with swirl*, which is in `docs/`.
     3D settings, camera, plane, slice and plot options, the Σ-map and the path.
 
 - Milestone 7: the Windows build (see below).
+- The browser version: the same Python code runs in the visitor's browser (Pyodide), published
+  with GitHub Pages. See [docs/web_version.md](docs/web_version.md). Screenshots:
+  `docs/figures/web_*.png` (made by `scripts/web_screenshots.py` with headless Chrome).
 
 Effective coordinates and continuation (milestone 8) come later.
+
+## Repository layout
+
+```
+swirl_explorer/
+  core/  viz/  io/     shared numerics, plots, movies and sessions; no Qt
+  ui/                  desktop front end (PySide6)
+  web/                 browser front end: the Python side of the web page (runs in Pyodide)
+site/                  the web page (HTML, JS, three.js 3D view); see docs/web_version.md
+packaging/             Windows build (PyInstaller spec, launcher, icon)
+tests/                 one suite; tests/test_layout.py keeps the shared code free of front-end imports
+requirements.txt       desktop
+```
 
 ## Running it
 
