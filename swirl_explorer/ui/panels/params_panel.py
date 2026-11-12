@@ -1,0 +1,239 @@
+"""Parameter panel: six Cauchy data with sliders, numeric fields and editable ranges."""
+from __future__ import annotations
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (QWidget, QGridLayout, QLabel, QSlider, QDoubleSpinBox, QGroupBox,
+                               QVBoxLayout, QHBoxLayout, QPushButton, QToolButton, QMenu,
+                               QInputDialog, QSizePolicy)
+
+from ...core.params import Params, PARAM_NAMES
+from ...core.edges import gamma_minus
+
+LABELS = {
+    "c1": ("c₁", "Taylor constant of Q: P_c = c₁(1−x) + c₂(1+x) + c₃(1−x²)"),
+    "c2": ("c₂", "Taylor constant of Q (north side)"),
+    "c3": ("c₃", "Taylor constant of Q (quadratic part)"),
+    "gamma": ("γ = U(x₀)", "meridional circulation at the base point (the brief's Γ)"),
+    "A": ("A = f(x₀)", "swirl at the base point"),
+    "kappa": ("κ = fₓ(x₀)", "swirl rate at the base point (the brief's γ)"),
+}
+DEFAULT_RANGES = {"c1": (-1.0, 3.0), "c2": (-1.0, 3.0), "c3": (-4.0, 4.0),
+                  "gamma": (-3.0, 3.0), "A": (-3.0, 3.0), "kappa": (-5.0, 5.0)}
+SLIDER_STEPS = 2000
+
+
+class CompactSpin(QDoubleSpinBox):
+    """Shows ~6 significant digits; keeps full precision internally."""
+
+    def textFromValue(self, v: float) -> str:
+        return f"{v:.7g}"
+
+
+class ParamRow:
+    """One parameter: name | slider | value | [min, max]."""
+
+    def __init__(self, grid: QGridLayout, row: int, name: str, on_change):
+        self.name = name
+        self._on_change = on_change
+        self._block = False
+        text, tip = LABELS[name]
+        lab = QLabel(text)
+        lab.setToolTip(tip)
+        lo, hi = DEFAULT_RANGES[name]
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider.setRange(0, SLIDER_STEPS)
+        self.slider.setMinimumWidth(120)
+        self.spin = self._spin(-1e6, 1e6, 6)
+        self.spin.setToolTip(tip)
+        self.lo = self._spin(-1e6, 1e6, 3, lo)
+        self.hi = self._spin(-1e6, 1e6, 3, hi)
+        for w in (self.lo, self.hi):
+            w.setFixedWidth(62)
+            w.setToolTip("slider range (editable)")
+            f = w.font()
+            f.setPointSizeF(max(f.pointSizeF() - 1.0, 7.0))
+            w.setFont(f)
+
+        self.ranges = (self.lo, self.hi)
+        self.range_lab = QLabel()
+        self.range_lab.setStyleSheet("color:#7a7974;font-size:10px;")
+        self._update_range_label()
+        self.lo.valueChanged.connect(lambda _: self._update_range_label())
+        self.hi.valueChanged.connect(lambda _: self._update_range_label())
+        grid.addWidget(lab, row, 0)
+        grid.addWidget(self.range_lab, row, 5)
+        grid.addWidget(self.slider, row, 1)
+        grid.addWidget(self.spin, row, 2)
+        grid.addWidget(self.lo, row, 3)
+        grid.addWidget(self.hi, row, 4)
+        self.slider.valueChanged.connect(self._slider_moved)
+        self.spin.valueChanged.connect(self._spin_changed)
+        self.lo.valueChanged.connect(lambda _: self._sync_slider())
+        self.hi.valueChanged.connect(lambda _: self._sync_slider())
+
+    @staticmethod
+    def _spin(lo, hi, dec, val=0.0):
+        s = CompactSpin()
+        s.setRange(lo, hi)
+        s.setDecimals(dec)
+        s.setSingleStep(10 ** (-min(dec, 3)))
+        s.setValue(val)
+        s.setKeyboardTracking(False)
+        s.setButtonSymbols(QDoubleSpinBox.NoButtons)
+        return s
+
+    def _update_range_label(self):
+        self.range_lab.setText(f"slider {self.lo.value():g} … {self.hi.value():g}".replace("-", "−"))
+
+    def value(self) -> float:
+        return self.spin.value()
+
+    def set_value(self, v: float, emit: bool = False) -> None:
+        self._block = not emit
+        if v < self.lo.value():
+            self.lo.setValue(v)
+        if v > self.hi.value():
+            self.hi.setValue(v)
+        self.spin.setValue(v)
+        self._sync_slider()
+        self._block = False
+
+    def _sync_slider(self):
+        lo, hi = self.lo.value(), self.hi.value()
+        if hi <= lo:
+            return
+        pos = int(round((self.spin.value() - lo) / (hi - lo) * SLIDER_STEPS))
+        old = self._block
+        self._block = True
+        self.slider.setValue(max(0, min(SLIDER_STEPS, pos)))
+        self._block = old
+
+    def _slider_moved(self, pos: int):
+        if self._block:
+            return
+        lo, hi = self.lo.value(), self.hi.value()
+        v = lo + (hi - lo) * pos / SLIDER_STEPS
+        old = self._block
+        self._block = True
+        self.spin.setValue(v)
+        self._block = old
+        self._on_change()
+
+    def _spin_changed(self, _v):
+        if self._block:
+            return
+        self._sync_slider()
+        self._on_change()
+
+
+class ParamsPanel(QWidget):
+    """Emits ``paramsChanged(Params)`` whenever a value changes."""
+
+    paramsChanged = Signal(object)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        v = QVBoxLayout(self)
+        box = QGroupBox("Data at the base point")
+        grid = QGridLayout(box)
+        self._range_heads = []
+        for col, t in enumerate(("", "", "value", "slider min", "max")):
+            if t:
+                h = QLabel(t)
+                h.setStyleSheet("color:#52514e;font-size:11px;")
+                grid.addWidget(h, 0, col)
+                if col >= 3:
+                    self._range_heads.append(h)
+        self.rows = {n: ParamRow(grid, i + 1, n, self._changed) for i, n in enumerate(PARAM_NAMES)}
+        grid.addWidget(QLabel("base point x₀"), len(PARAM_NAMES) + 1, 0)
+        self.xb = ParamRow._spin(-0.99, 0.99, 4, 0.0)
+        self.xb.setToolTip("base point x_b = cos θ_b of the Cauchy data (default: equator)")
+        self.xb.valueChanged.connect(lambda _: self._changed())
+        grid.addWidget(self.xb, len(PARAM_NAMES) + 1, 2)
+        grid.setColumnStretch(1, 1)
+        from PySide6.QtWidgets import QCheckBox
+        self.show_ranges = QCheckBox("edit slider ranges")
+        self.show_ranges.setToolTip("show the min/max of each slider")
+        self.show_ranges.toggled.connect(self._toggle_ranges)
+        bp_note = QLabel("= cos θ of the data point (0 = equator)")
+        bp_note.setStyleSheet("color:#7a7974;font-size:10px;")
+        grid.addWidget(bp_note, len(PARAM_NAMES) + 1, 3, 1, 3)
+        grid.addWidget(self.show_ranges, len(PARAM_NAMES) + 2, 2, 1, 3)
+        self._toggle_ranges(False)
+        v.addWidget(box)
+
+        pres = QGroupBox("Presets")
+        pg = QGridLayout(pres)
+        items = (("Rest state", self.preset_rest, "c = 0, γ = A = κ = 0: U ≡ 0, no flow"),
+                 ("Landau jet…", self.preset_landau, "no swirl: U = 2(1−x²)/(λ_L + x), global iff |λ_L| ≥ 1"),
+                 ("Generic pole (type G)", self.preset_G,
+                  "inside the lens: c = 0, κ = 1, γ = γ₋ + 0.1 (monograph, Numerical observation 4.28)"),
+                 ("Lens edge (type L1)", self.preset_L1,
+                  "on the lower lens edge: c = 0, κ = 1, γ = γ₋ (north pole logarithmic, Obs. 4.28)"),
+                 ("Recessive edge (type R)", self.preset_R,
+                  "lens edge for c = (0, −0.9, 0), κ = 0.3: north pole recessive, μ ≈ 0.22 (Obs. 4.28)"))
+        for i, (text, fn, tip) in enumerate(items):
+            b = QPushButton(text)
+            b.setToolTip(tip)
+            b.clicked.connect(fn)
+            pg.addWidget(b, i // 3, i % 3)
+        v.addWidget(pres)
+        note = QLabel(
+            "<span style='color:#46453f'><b>Notation.</b> x = cos θ; the poles x = ±1 are the symmetry axis, "
+            "d = sin θ is the distance to it. c<sub>1</sub>, c<sub>2</sub>, c<sub>3</sub>: Taylor constants of "
+            "the potential Q at the base point, Q ≈ c<sub>1</sub>(1−x) + c<sub>2</sub>(1+x) + c<sub>3</sub>(1−x<sup>2</sup>). "
+            "γ = U, A = f, κ = f<sub>x</sub> at the base point, where U = u<sub>θ</sub> sin θ and "
+            "f = u<sub>φ</sub> sin θ. z solves z′′ = W z with W = 1 + Q/2, and h = z′/z.</span>")
+        note.setWordWrap(True)
+        v.addWidget(note)
+        v.addStretch(1)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+
+    def _toggle_ranges(self, on: bool):
+        for r in self.rows.values():
+            for w in r.ranges:
+                w.setVisible(on)
+        for h in self._range_heads:
+            h.setVisible(on)
+        for r in self.rows.values():
+            r.range_lab.setVisible(not on)
+
+    # ---------------------------------------------------------------- state
+    def params(self) -> Params:
+        return Params(*(self.rows[n].value() for n in PARAM_NAMES), xb=self.xb.value())
+
+    def set_params(self, p: Params, emit: bool = True) -> None:
+        for n, val in zip(PARAM_NAMES, p.as_tuple()):
+            self.rows[n].set_value(val, emit=False)
+        self.xb.blockSignals(True)
+        self.xb.setValue(p.xb)
+        self.xb.blockSignals(False)
+        if emit:
+            self._changed()
+
+    def _changed(self):
+        self.paramsChanged.emit(self.params())
+
+    # ---------------------------------------------------------------- presets
+    def preset_rest(self):
+        self.set_params(Params())
+
+    def preset_landau(self):
+        L, ok = QInputDialog.getDouble(self, "Landau family",
+                                       "λ_L (|λ_L| ≥ 1 is global; U = 2(1−x²)/(λ_L+x)):",
+                                       1.5, -100.0, 100.0, 4)
+        if ok and L != 0:
+            self.set_params(Params(gamma=2.0 / L))
+
+    def preset_G(self):
+        gm = gamma_minus(Params(kappa=1.0))
+        self.set_params(Params(gamma=gm + 0.1, kappa=1.0))
+
+    def preset_L1(self):
+        gm = gamma_minus(Params(kappa=1.0))
+        self.set_params(Params(gamma=gm + 1e-11, kappa=1.0))
+
+    def preset_R(self):
+        p = Params(c2=-0.9, kappa=0.3)
+        gm = gamma_minus(p)
+        self.set_params(p.with_(gamma=gm + 1e-11))

@@ -5,8 +5,19 @@ solutions of the stationary Navier–Stokes equations in R³ \ {axis}. It follow
 monograph *Axisymmetric (−1)-homogeneous solutions of the stationary Navier–Stokes
 equations with swirl*, which is in `docs/`.
 
-**Status:** milestone 1 is done. It contains the core solver, the pole diagnostics
-and the regression tests. The Qt/3D interface comes next.
+**Status:** milestones 1 and 2 are done.
+
+- Milestone 1: core solver, pole diagnostics, regression tests.
+- Milestone 2: the Qt shell, with the parameter panel, the live status and stacked
+  2D profile plots, including pins and PNG/SVG/CSV export.
+
+The 3D view, slice plane and Σ-map come next.
+
+Start the app with:
+
+```bash
+python -m swirl_explorer
+```
 
 ## The mathematics in one page
 

@@ -182,7 +182,7 @@ def diagnose_pole(sol: Solution, pole: str = "north", s_eval: Optional[float] = 
         xb = sol.xi_blowup_north if side > 0 else sol.xi_blowup_south
         return PoleDiagnostics(pole, xi_end, s_end, nan, nan, nan, nan, nan, nan, nan, nan,
                                nan, nan, nan, "blowup", 1.0,
-                               note=f"z -> 0 at x = {math.tanh(xb):.6f} (xi = {xb:.4f})")
+                               note=f"z → 0 at x = {math.tanh(xb):.6f} (ξ = {xb:.4f})")
 
     xs = xi_end - spacing * np.arange(3)[::-1]
     pr = _mirror_profiles(sol, xs, side)
