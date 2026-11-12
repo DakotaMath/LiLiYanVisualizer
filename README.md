@@ -103,6 +103,15 @@ To share it, send the zip. The recipient unzips it anywhere and runs
   290 MB), the ffmpeg binary for MP4 export (100 MB) and Qt (100 MB).
 - **SmartScreen:** the exe is not code-signed, so Windows shows "Windows protected your
   PC" the first time it runs. Click **More info → Run anyway**.
+- **Releases from GitHub:** `.github/workflows/release.yml` builds the same zip on
+  GitHub's Windows runner, with a software OpenGL (Mesa) for the tests and self-test.
+  - **Publish a release:** set `__version__` in `swirl_explorer/__init__.py`, commit,
+    and push a matching tag, e.g. `git tag v0.7.0` then `git push origin v0.7.0`. The
+    zip is attached to a GitHub Release for that tag.
+  - **Build without releasing:** run it from the Actions tab ("Windows build" → Run
+    workflow; the workflow file must be on the default branch for the button to
+    appear), or open a pull request that changes the packaging. The zip is kept as a
+    workflow artifact for 14 days.
 - **OpenGL:** the 3D view needs it. Without a GPU driver (some virtual machines) Qt
   falls back to the bundled software renderer, which is slow.
 
