@@ -253,7 +253,18 @@ async function computeSigma(base) {
   const s = S.sigma;
   if (s.x_name === s.y_name) { $("sigma-note").textContent = "Pick two different parameters for the two axes."; return; }
   if (s.x_range[0] >= s.x_range[1] || s.y_range[0] >= s.y_range[1]) { $("sigma-note").textContent = "Each range needs 'from' < 'to'."; return; }
-  const run = ++sigmaRun, spec = sigmaSpec(base), t0 = performance.now();
+  const run = ++sigmaRun, spec = sigmaSpec(base), t0 = performance.now(), key = JSON.stringify(spec);
+  if (await py.call("sigma_recall", key)) {           // seen this exact map before (zoom undo, full view)
+    if (run !== sigmaRun) return;
+    s.running = false; s.spec = s.computed = spec;
+    $("sg-compute").disabled = false; $("sg-cancel").disabled = true; $("sg-bar").style.width = "100%";
+    const r = await refreshSigma();
+    if (r && r.stats) {
+      const st = r.stats, pct = (100 * st.global) / Math.max(1, st.done);
+      $("sigma-note").textContent = `${st.global.toLocaleString()} of ${st.done.toLocaleString()} grid points are global (${pct.toFixed(1)}%), on a ${st.nx} × ${st.ny} grid (computed earlier)`;
+    }
+    return;
+  }
   s.running = true; s.spec = spec;
   $("sg-compute").disabled = true; $("sg-cancel").disabled = false; $("sg-bar").style.width = "0%";
   if (!pool.length) $("sigma-note").textContent = `starting ${poolSize} background workers (first map only)…`;
@@ -294,6 +305,7 @@ async function computeSigma(base) {
   if (run !== sigmaRun) return;
   s.running = false; s.computed = spec;
   $("sg-compute").disabled = false; $("sg-cancel").disabled = true;
+  py.call("sigma_keep", key);
   const r = await refreshSigma();
   const secs = (performance.now() - t0) / 1000;
   if (r && r.stats) {
@@ -358,7 +370,7 @@ function drawCross(d) {
   Object.assign(cv.style, { top: `${oy + a0.y0 * r.height}px`, height: `${(a0.y1 - a0.y0) * r.height}px`, left: `${ox + d.fx * r.width}px` });
 }
 
-let dragging = false, lastJump = 0, hoverT = 0;
+let hoverT = 0;
 function sigmaParams(d) {                // the clicked point, from the map's own spec
   const sp = S.sigma.spec;
   return { ...sp.base, [sp.x_name]: d.x, [sp.y_name]: d.y };
@@ -373,31 +385,121 @@ async function sigmaJump(d) {
   setParams(q);
 }
 
+// ---------------------------------------------------------------------------- zoom
+// Drag a box to zoom in (a new map over the box), ↶ to step back, ⤢ for the whole region.
+// Finished maps are remembered on the Python side, so stepping back is instant.
+const zoomStack = [];
+const FULL = { gamma: [-2.6, 2.6], kappa: [-4.6, 4.6] };     // the lens view; other axes: their whole range
+const fullRange = (n) => [...(FULL[n] || S.info.params.find((q) => q.name === n).range)];
+
+function currentView() {
+  const sp = S.sigma.spec;
+  return { x_name: sp.x_name, y_name: sp.y_name, x_range: [...sp.x_range], y_range: [...sp.y_range], n: sp.nx, base: { ...sp.base } };
+}
+
+function updateZoomButtons() {
+  $("sg-undo").disabled = !zoomStack.length;
+  $("sg-undo").title = zoomStack.length ? `undo the last zoom (${zoomStack.length} step${zoomStack.length > 1 ? "s" : ""} back available)` : "nothing to undo yet: drag a box on the map to zoom in";
+}
+
+function goView(v, remember) {
+  if (remember && S.sigma.spec) zoomStack.push(currentView());
+  if (zoomStack.length > 50) zoomStack.shift();
+  Object.assign(S.sigma, { x_name: v.x_name, y_name: v.y_name, x_range: [...v.x_range], y_range: [...v.y_range], n: v.n });
+  syncSigma(); updateSigmaExplain(); updateZoomButtons();
+  computeSigma(v.base);
+}
+
+function zoomUndo() {
+  if (zoomStack.length) goView(zoomStack.pop(), false);
+}
+
+function zoomFull() {
+  if (!S.sigma.spec) return;
+  const v = currentView();
+  const full = { ...v, x_range: fullRange(v.x_name), y_range: fullRange(v.y_name) };
+  if (JSON.stringify([full.x_range, full.y_range]) === JSON.stringify([v.x_range, v.y_range])) {
+    $("sigma-note").textContent = "Already showing the whole region.";
+    return;
+  }
+  goView(full, true);
+}
+
+const nice = (v, span) => { const q = 10 ** (Math.floor(Math.log10(span)) - 3); return +(Math.round(v / q) * q).toPrecision(12); };
+
+// the axes the box started in, and the pointer clamped to them (fractions of the image)
+function boxGeom(p, ev) {
+  const img = $("sigma-img"), r = img.getBoundingClientRect(), a = p.axes;
+  const fx = Math.min(a.x1, Math.max(a.x0, (ev.clientX - r.left) / r.width));
+  const fy = Math.min(a.y1, Math.max(a.y0, (ev.clientY - r.top) / r.height));
+  return { r, a, fx0: Math.min(p.d.fx, fx), fx1: Math.max(p.d.fx, fx), fy0: Math.min(p.d.fy, fy), fy1: Math.max(p.d.fy, fy) };
+}
+
+function drawBox(g) {
+  const box = $("sigma-box"), wr = $("sigma-wrap").getBoundingClientRect();
+  if (!g) { box.hidden = true; return; }
+  const ox = g.r.left - wr.left, oy = g.r.top - wr.top;
+  box.hidden = false;
+  Object.assign(box.style, { left: `${ox + g.fx0 * g.r.width}px`, top: `${oy + g.fy0 * g.r.height}px`,
+    width: `${(g.fx1 - g.fx0) * g.r.width}px`, height: `${(g.fy1 - g.fy0) * g.r.height}px` });
+}
+
+function zoomToBox(g) {
+  if ((g.fx1 - g.fx0) * g.r.width < 6 || (g.fy1 - g.fy0) * g.r.height < 6) {
+    $("sigma-note").textContent = "That box is too thin to zoom into: drag out a box in both directions.";
+    return;
+  }
+  const a = g.a, sx = a.xlim[1] - a.xlim[0], sy = a.ylim[1] - a.ylim[0];
+  const X = (f) => a.xlim[0] + ((f - a.x0) / (a.x1 - a.x0)) * sx;
+  const Y = (f) => a.ylim[1] - ((f - a.y0) / (a.y1 - a.y0)) * sy;
+  const xr = [X(g.fx0), X(g.fx1)], yr = [Y(g.fy1), Y(g.fy0)];
+  const v = { ...currentView(), x_range: xr.map((t) => nice(t, xr[1] - xr[0])), y_range: yr.map((t) => nice(t, yr[1] - yr[0])) };
+  goView(v, true);
+}
+
 function bindSigma() {
   const img = $("sigma-img");
+  let press = null;                               // {d, axes, cx, cy, box}
   img.addEventListener("mousemove", async (ev) => {
     const d = sigmaData(ev);
     drawCross(d);
-    if (dragging && d && performance.now() - lastJump > 40) { lastJump = performance.now(); sigmaJump(d); return; }
-    if (!d) { $("sigma-hover").textContent = "Hover the map to read a point; click to jump there, drag to move; shift-click adds a path keyframe."; return; }
+    if (!d) { $("sigma-hover").textContent = "Hover the map to read a point; click to jump there, drag a box to zoom in; shift-click adds a path keyframe."; return; }
     const t = ++hoverT;
     const r = await schedule("sigma_point", "sigma_point", [d.x, d.y]);
     if (r && t === hoverT) $("sigma-hover").textContent = r.text;
   });
-  img.addEventListener("mouseleave", () => { drawCross(null); dragging = false; });
+  img.addEventListener("mouseleave", () => drawCross(null));
   img.addEventListener("mousedown", (ev) => {
     const d = sigmaData(ev);
     if (!d || ev.button !== 0) return;
+    ev.preventDefault();
     if (ev.shiftKey) {                            // a keyframe for the path panel, no jump
       showPath(true);
       path.addKeyframe(sigmaParams(d));
       status(`keyframe ${path.path.keyframes.length} added from the Σ-map`);
       return;
     }
-    dragging = true;
-    sigmaJump(d);
+    const axes = S.sigma.axes.find((a) => d.fx >= a.x0 && d.fx <= a.x1 && d.fy >= a.y0 && d.fy <= a.y1);
+    press = { d, axes, cx: ev.clientX, cy: ev.clientY, box: false };
   });
-  window.addEventListener("mouseup", () => { dragging = false; });
+  window.addEventListener("mousemove", (ev) => {
+    if (!press) return;
+    if (!press.box && Math.hypot(ev.clientX - press.cx, ev.clientY - press.cy) > 5) press.box = true;
+    if (press.box) drawBox(boxGeom(press, ev));
+  });
+  window.addEventListener("mouseup", (ev) => {
+    if (!press) return;
+    const p = press; press = null;
+    drawBox(null);
+    if (p.box) zoomToBox(boxGeom(p, ev));
+    else sigmaJump(p.d);                          // a plain click: go to that solution
+  });
+  window.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && press) { press = null; drawBox(null); }
+  });
+  $("sg-undo").addEventListener("click", zoomUndo);
+  $("sg-full").addEventListener("click", zoomFull);
+  updateZoomButtons();
 }
 
 // ============================================================================ tabs, panels
@@ -633,6 +735,7 @@ async function applySession(text) {
     Object.assign(S.sigma, { x_name: sec.sigma.x_name, y_name: sec.sigma.y_name, x_range: sec.sigma.x_range,
       y_range: sec.sigma.y_range, n: Math.min(sec.sigma.grid || 101, 401), mode: sec.sigma.mode, edge: sec.sigma.edge, mu: sec.sigma.mu });
     S.sigma.spec = null; syncSigma();
+    zoomStack.length = 0; updateZoomButtons();
   }
   path.setPath(s.path, sec.movie || {});
   syncSceneWidgets();
