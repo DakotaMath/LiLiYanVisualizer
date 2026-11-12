@@ -329,11 +329,7 @@ class SlicePanel(QWidget):
         self.fig.clear()
         self.fig.set_facecolor(p["plot_bg"])
         with matplotlib.rc_context(style.mpl_rc()):
-            # top row: title (left) + orientation sketch (right); below: the slice.  Separate cells, no overlap.
-            gs = self.fig.add_gridspec(2, 2, height_ratios=[1.3, 3.6], width_ratios=[1.5, 1])
-            ax_title = self.fig.add_subplot(gs[0, 0])
-            ax_title.set_axis_off()
-            ax = self.fig.add_subplot(gs[1, :])
+            ax = self.fig.add_subplot()
             L = data.spec.half_size
             ext = (-L, L, -L, L)
             AXIS_COL = "#e09a2d"
@@ -422,8 +418,8 @@ class SlicePanel(QWidget):
             where = ""
             if abs(d) > self.domain.r_min:
                 where = f"\norigin {abs(d):.2f} " + ("below" if d > 0 else "above") + " the plane"
-            ax_title.text(0.0, 0.05, f"{_plane_name(data.spec)}\nn = {_axis_name(n)} points toward you{where}",
-                          fontsize=10, ha="left", va="bottom", color=p["plot_ink"], transform=ax_title.transAxes)
+            ax.set_title(f"{_plane_name(data.spec)}\nn = {_axis_name(n)} points toward you{where}", fontsize=10,
+                         loc="left")
             ticks = np.arange(-L, L + 1e-9, 0.5)
             ax.set_xticks(ticks)
             ax.set_yticks(ticks)
@@ -432,27 +428,6 @@ class SlicePanel(QWidget):
             ax.set_ylim(-L, L)
             ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.0, -0.32), ncol=1, fontsize=8.5,
                       frameon=False)
-            # orientation inset: the plane, its normal and the symmetry axis in 3D
-            ins = self.fig.add_subplot(gs[0, 1], projection="3d")
-            ins.set_axis_off()
-            ins.set_facecolor((0, 0, 0, 0))
-            c = data.spec.center
-            sq = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]]) * 0.9
-            P = np.array([c + a_ * e1 + b_ * e2 for a_, b_ in sq])
-            ins.plot(P[:, 0], P[:, 1], P[:, 2], color="#e09a2d", lw=1.4)
-            ins.plot([0, 0], [0, 0], [-1.2, 1.2], color=p["plot_ink"], lw=1.6)
-            ins.text(0.08, 0.0, 1.25, "z", fontsize=9, color=p["plot_ink"])
-            ins.plot([0, 1.1], [0, 0], [0, 0], color=p["plot_ink2"], lw=0.8)
-            ins.plot([0, 0], [0, 1.1], [0, 0], color=p["plot_ink2"], lw=0.8)
-            ins.text(1.2, 0, -0.05, "x", fontsize=9, color=p["plot_ink2"])
-            ins.text(0, 1.2, -0.05, "y", fontsize=9, color=p["plot_ink2"])
-            ins.quiver(*c, *(0.8 * n), color="#e09a2d", lw=1.6, arrow_length_ratio=0.3)
-            tip = c + 1.0 * n
-            ins.text(*(tip + 0.6 * n), "n (you)", fontsize=9, color="#e09a2d", ha="center", va="bottom")
-            ins.set_xlim(-1, 1)
-            ins.set_ylim(-1, 1)
-            ins.set_zlim(-1, 1)
-            ins.view_init(elev=20, azim=-60)
         self.canvas.draw_idle()
         self.info.setText("")
 
