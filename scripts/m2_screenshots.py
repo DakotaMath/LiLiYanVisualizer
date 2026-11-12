@@ -13,7 +13,8 @@ from swirl_explorer.ui.main_window import MainWindow
 
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs", "figures")
 app = QApplication(sys.argv)
-app.setFont(QFont("Segoe UI", 9))
+from swirl_explorer.ui.theme import apply_theme
+apply_theme(app)
 w = MainWindow()
 w.resize(1680, 980)
 w.show()

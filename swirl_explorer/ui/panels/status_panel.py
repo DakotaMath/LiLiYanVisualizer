@@ -8,7 +8,11 @@ from PySide6.QtCore import Qt
 
 from ...core.poles import Summary, PoleDiagnostics
 
-OK, BAD, INK2 = "#1a8a5f", "#c0392b", "#46453f"
+from ...viz import style
+
+
+def _col(k):
+    return style.c()[k]
 STRATUM_GLOSS = {
     "G": "generic: U → −2+2μ, swirl bounded", "R": "recessive: U → −2−2μ, swirl unbounded",
     "L1": "logarithmic: U → −2 like 4/s, swirl bounded", "L2": "logarithmic: U → −2, swirl unbounded",
@@ -39,13 +43,13 @@ def _bp_short(bp: str) -> str:
 def pole_line(name: str, d: PoleDiagnostics, sign: int) -> tuple[str, str]:
     """(html line, tooltip text) for one pole."""
     if d.stratum == "blowup":
-        return f"<b>{name}</b> &nbsp;<span style='color:{BAD}'>not reached (blow-up first)</span>", d.note
+        return f"<b>{name}</b> &nbsp;<span style='color:{_col('bad')}'>not reached (blow-up first)</span>", d.note
     if d.stratum == "unsafe":
-        return (f"<b>{name}</b> &nbsp;<span style='color:{BAD}'>no admissible pole limit</span>",
+        return (f"<b>{name}</b> &nbsp;<span style='color:{_col('bad')}'>no admissible pole limit</span>",
                 "the solution would blow up beyond the computed window (book's terminal test)")
     U = d.U_lim if sign > 0 else -d.U_lim
     pole = "U(1)" if sign > 0 else "U(−1)"
-    unc = (f" <span style='color:{BAD}'>(uncertain)</span>" if d.confidence < 0.9 else "")
+    unc = (f" <span style='color:{_col('bad')}'>(uncertain)</span>" if d.confidence < 0.9 else "")
     tg = {"G": "generic", "R": "recessive", "L1": "log, bounded swirl", "L2": "log, unbounded swirl",
           "R0": "no-swirl recessive"}.get(d.stratum, "")
     line = (f"<b>{name}</b> &nbsp;type <b>{d.stratum}</b> ({tg}){unc} · μ = {_fmt(d.mu)} · "
@@ -61,7 +65,7 @@ def pole_line(name: str, d: PoleDiagnostics, sign: int) -> tuple[str, str]:
         else:
             plain.append(f"{lab}: below rounding")
             html.append(f"{hl}: below rounding")
-    sub = (f"<br><span style='color:{INK2}'>&nbsp;&nbsp;&nbsp;f = {_fmt(d.f_lim)} · near the axis: "
+    sub = (f"<br><span style='color:{_col('muted')}'>&nbsp;&nbsp;&nbsp;f = {_fmt(d.f_lim)} · near the axis: "
            + ", ".join(html) + "</span>")
     tip = (f"{name}\n"
            f"pole type {d.stratum}: {STRATUM_GLOSS.get(d.stratum, '')}\n"
@@ -82,8 +86,10 @@ class StatusPanel(QWidget):
         self.head.setTextFormat(Qt.RichText)
         self.north = QLabel("")
         self.south = QLabel("")
+        self.head.setWordWrap(True)
         for w in (self.north, self.south):
             w.setTextFormat(Qt.RichText)
+            w.setWordWrap(True)
             w.setTextInteractionFlags(Qt.TextSelectableByMouse)
         bv.addWidget(self.head)
         bv.addWidget(self.north)
@@ -96,11 +102,11 @@ class StatusPanel(QWidget):
         v.addWidget(box)
 
     def show_busy(self):
-        self.head.setText(f"<span style='color:{INK2}'>computing…</span>")
+        self.head.setText(f"<span style='color:{_col('muted')}'>computing…</span>")
 
     def show_summary(self, sm: Summary, solve_ms: float) -> None:
         if sm.is_global:
-            self.head.setText(f"<span style='color:{OK};font-size:16px'><b>● GLOBAL</b></span>"
+            self.head.setText(f"<span style='color:{_col('ok')};font-size:16px'><b>● GLOBAL</b></span>"
                               f"&nbsp;&nbsp; {CLASS_GLOSS.get(sm.cls, sm.cls)}")
         else:
             if sm.blowup_x is not None:
@@ -108,7 +114,7 @@ class StatusPanel(QWidget):
                 where = f" &nbsp; blow-up: {what} at x = {sm.blowup_x:+.6f}".replace("-", "−")
             else:
                 where = " &nbsp; a pole has no admissible limit"
-            self.head.setText(f"<span style='color:{BAD};font-size:16px'><b>● NOT GLOBAL</b></span>{where}")
+            self.head.setText(f"<span style='color:{_col('bad')};font-size:16px'><b>● NOT GLOBAL</b></span>{where}")
         for w, (html, tip) in ((self.north, pole_line("North x = +1", sm.north, +1)),
                                (self.south, pole_line("South x = −1", sm.south, -1))):
             w.setText(html)

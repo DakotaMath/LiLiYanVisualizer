@@ -24,6 +24,7 @@ from matplotlib.lines import Line2D
 
 from ..core.solver import Solution
 from ..core.poles import Summary, PoleDiagnostics
+from . import style
 
 QUANTITIES: dict[str, str] = {
     "U": r"$U = u_\theta\sin\theta$",
@@ -122,7 +123,17 @@ def _robust_ylim(ys: list[np.ndarray]) -> Optional[tuple[float, float]]:
 def draw_profiles(fig: Figure, curves: Sequence[Curve], quantities: Sequence[str],
                   xvar: str = "s_north", mode: str = "linear", pole: str = "north",
                   overlay: bool = True) -> list:
-    """Draw stacked profile plots onto ``fig``. Returns the list of axes."""
+    """Draw stacked profile plots onto ``fig`` in the current colour theme. Returns the axes."""
+    import matplotlib
+    global INK, INK2, GRID
+    p = style.c()
+    INK, INK2, GRID = p["plot_ink"], p["plot_ink2"], p["plot_grid"]
+    fig.set_facecolor(p["plot_bg"])
+    with matplotlib.rc_context(style.mpl_rc()):
+        return _draw_profiles(fig, curves, quantities, xvar, mode, pole, overlay)
+
+
+def _draw_profiles(fig, curves, quantities, xvar, mode, pole, overlay) -> list:
     fig.clear()
     quantities = [q for q in quantities if q in QUANTITIES] or ["U"]
     n = len(quantities)
@@ -243,9 +254,9 @@ def draw_profiles(fig: Figure, curves: Sequence[Curve], quantities: Sequence[str
         north_right = xvar in ("x", "xi", "s_north")
         lt, rt = ("← S pole (x = −1)", "N pole (x = +1) →") if north_right else \
                  ("← N pole (x = +1)", "S pole (x = −1) →")
-        ax_last.annotate(lt, xy=(0, 0), xycoords="axes fraction", xytext=(0, -26), textcoords="offset points",
+        ax_last.annotate(lt, xy=(0, 0), xycoords="axes fraction", xytext=(0, -40), textcoords="offset points",
                          ha="left", va="top", fontsize=8.5, color=INK2)
-        ax_last.annotate(rt, xy=(1, 0), xycoords="axes fraction", xytext=(0, -26), textcoords="offset points",
+        ax_last.annotate(rt, xy=(1, 0), xycoords="axes fraction", xytext=(0, -40), textcoords="offset points",
                          ha="right", va="top", fontsize=8.5, color=INK2)
     ordered = [c for c in curves if not c.pinned] + [c for c in curves if c.pinned]
     handles = [Line2D([], [], color=c.color, lw=2.0 if not c.pinned else 1.4, label=c.label) for c in ordered]

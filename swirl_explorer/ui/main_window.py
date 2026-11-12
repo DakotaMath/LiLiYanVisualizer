@@ -10,13 +10,15 @@ from ..core.params import Params
 from .panels.params_panel import ParamsPanel
 from .panels.status_panel import StatusPanel
 from .panels.plots_panel import PlotsPanel
+from .panels.view3d_panel import View3DPanel
 from .worker import SolveThread
 
 
 def _placeholder(title: str, text: str) -> QWidget:
     w = QWidget()
     v = QVBoxLayout(w)
-    lab = QLabel(f"<h3>{title}</h3><p style='color:#52514e'>{text}</p>")
+    from ..viz import style
+    lab = QLabel(f"<h3>{title}</h3><p style='color:{style.c()['muted']}'>{text}</p>")
     lab.setAlignment(Qt.AlignCenter)
     lab.setWordWrap(True)
     v.addWidget(lab)
@@ -34,7 +36,8 @@ class MainWindow(QMainWindow):
 
         # centre: views (3D, slice, Σ-map arrive in milestones 3-5)
         self.tabs = QTabWidget()
-        self.tabs.addTab(_placeholder("3D view", "Streamlines, isosurfaces and glyphs (milestone 3)."), "3D view")
+        self.view3d = View3DPanel()
+        self.tabs.addTab(self.view3d, "3D view")
         self.tabs.addTab(_placeholder("Slice plane", "u·n colouring and projected streamlines (milestone 4)."),
                          "Slice plane")
         self.tabs.addTab(_placeholder("Σ-map", "Globality and pole strata on 2D slices of R⁶ (milestone 5)."),
@@ -61,7 +64,8 @@ class MainWindow(QMainWindow):
         dr.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
         self.addDockWidget(Qt.RightDockWidgetArea, dr)
         self.setCentralWidget(self.tabs)
-        self.resizeDocks([dl, dr], [500, 900], Qt.Horizontal)
+        self._docks = (dl, dr)
+        self._docks_sized = False
 
         m = self.menuBar().addMenu("&File")
         for text, kind in (("Export plots as PNG…", "png"), ("Export plots as SVG…", "svg"),
@@ -73,6 +77,11 @@ class MainWindow(QMainWindow):
         q = QAction("Quit", self)
         q.triggered.connect(self.close)
         m.addAction(q)
+        vm = self.menuBar().addMenu("&View")
+        for text, mode in (("Dark theme", "dark"), ("Light theme", "light")):
+            a = QAction(text, self)
+            a.triggered.connect(lambda _=False, m=mode: self.set_theme(m))
+            vm.addAction(a)
         h = self.menuBar().addMenu("&Help")
         about = QAction("Conventions…", self)
         about.triggered.connect(self._about)
@@ -90,12 +99,24 @@ class MainWindow(QMainWindow):
         self.last = (p, sol, sm)
         self.status.show_summary(sm, ms)
         self.plots.set_current(sol, sm)
+        self.view3d.set_solution(sol, sm)
         self.statusBar().showMessage(
             f"(c₁, c₂, c₃, γ, A, κ) = ({', '.join(f'{v:.7g}' for v in p.as_tuple())}) at x₀ = {p.xb:g}"
             f"   ·   solve {ms:.0f} ms")
 
     def _on_failed(self, p, msg):
         self.statusBar().showMessage(f"solver error: {msg}")
+
+    def set_theme(self, mode: str) -> None:
+        from PySide6.QtWidgets import QApplication
+        from .theme import apply_theme
+        apply_theme(QApplication.instance(), mode)
+        self.params.refresh_style()
+        self.plots.refresh_style()
+        self.view3d.refresh_style()
+        if self.last is not None:
+            p, sol, sm = self.last
+            self.status.show_summary(sm, 0.0)
 
     def _about(self):
         QMessageBox.information(
@@ -106,6 +127,14 @@ class MainWindow(QMainWindow):
             "Pole types G / R / L1 / L2 and labels follow the monograph (Table 4.1) and "
             "docs/conventions.md.")
 
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        if not self._docks_sized:
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, lambda: self.resizeDocks(list(self._docks), [330, 380], Qt.Horizontal))
+            self._docks_sized = True
+
     def closeEvent(self, ev):
         self.solver.stop()
+        self.view3d.shutdown()
         super().closeEvent(ev)

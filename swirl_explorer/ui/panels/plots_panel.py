@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QPu
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 
+from ...viz import style
 from ...viz.plots2d import QUANTITIES, XVARS, Curve, draw_profiles, export_csv, PIN_COLORS, CURRENT
 
 QUANTITY_BUTTONS = [("U", "U"), ("f", "f"), ("Q", "Q"), ("z", "z"), ("W", "W = 1+Q/2"), ("h", "h = z′/z"),
@@ -53,21 +54,24 @@ class PlotsPanel(QWidget):
 
         row2 = QHBoxLayout()
         self.checks: dict[str, QCheckBox] = {}
+        row2b = QHBoxLayout()
         for key, lab in QUANTITY_BUTTONS:
             c = QCheckBox(lab)
             c.setChecked(key in ("U", "f", "Q"))
             c.setToolTip(TIPS[key])
             c.toggled.connect(self.redraw)
             self.checks[key] = c
-            row2.addWidget(c)
-        row2.addSpacing(10)
+            (row2 if key in ("U", "f", "Q", "z", "W", "h") else row2b).addWidget(c)
         self.overlay = QCheckBox("predictions")
         self.overlay.setChecked(True)
         self.overlay.setToolTip("overlay predicted pole limits / rates (dashed)")
         self.overlay.toggled.connect(self.redraw)
-        row2.addWidget(self.overlay)
+        row2b.addSpacing(10)
+        row2b.addWidget(self.overlay)
         row2.addStretch(1)
+        row2b.addStretch(1)
         v.addLayout(row2)
+        v.addLayout(row2b)
 
         row3 = QHBoxLayout()
         self.pin_btn = QPushButton("Pin current")
@@ -86,13 +90,13 @@ class PlotsPanel(QWidget):
         for w in (self.pin_btn, self.clear_btn, self.export_btn):
             row3.addWidget(w)
         self.pin_info = QLabel("")
-        self.pin_info.setStyleSheet("color:#52514e;")
+        self.pin_info.setStyleSheet(f"color:{style.c()['muted']};")
         row3.addWidget(self.pin_info)
         row3.addStretch(1)
         v.addLayout(row3)
 
         self.fig = Figure(figsize=(6, 7), layout="constrained")
-        self.fig.set_facecolor("#fcfcfb")
+        self.fig.set_facecolor(style.c()["plot_bg"])
         self.canvas = FigureCanvasQTAgg(self.fig)
         v.addWidget(self.canvas, 1)
 
@@ -142,6 +146,11 @@ class PlotsPanel(QWidget):
                       mode=self.mode.currentData(), pole=self.pole.currentData(),
                       overlay=self.overlay.isChecked())
         self.canvas.draw_idle()
+
+    def refresh_style(self):
+        self.pin_info.setStyleSheet(f"color:{style.c()['muted']};")
+        self.fig.set_facecolor(style.c()["plot_bg"])
+        self.redraw()
 
     def export(self, kind: str, path: str | None = None) -> str | None:
         if path is None:

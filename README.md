@@ -11,7 +11,17 @@ equations with swirl*, which is in `docs/`.
 - Milestone 2: the Qt shell, with the parameter panel, the live status and stacked
   2D profile plots, including pins and PNG/SVG/CSV export.
 
-The 3D view, slice plane and Σ-map come next.
+- Milestone 3: the 3D view (PyVista). It shows:
+  - streamlines from rings around the axis, a ball, a disc or a line rake, with a
+    draggable handle (off by default);
+  - direction cones, and the inflow/outflow along the axis at each pole;
+  - stream surfaces, vortex lines, arrows and isosurfaces;
+  - self-similar copies λX of a streamline;
+  - colouring by |u|, u_φ, helicity or pressure, and a half-space cut-away.
+
+  The theme is dark by default (View menu: light).
+
+The slice plane and the Σ-map come next.
 
 Start the app with:
 

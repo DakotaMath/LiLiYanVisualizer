@@ -24,10 +24,28 @@ from .solver import Solution
 _SPLINE_KEYS = ("U", "f", "u_r", "f_x", "U_xx", "p", "hel", "Q")
 
 
-class FieldInterpolator:
-    """Fast vectorised evaluation of the 3D fields of a :class:`Solution`."""
+class _Linear:
+    """Piecewise-linear interpolation on a uniform grid (much cheaper than a spline call)."""
 
-    def __init__(self, sol: Solution, dxi: float = 0.004, margin: float = 0.0):
+    def __init__(self, x0: float, dx: float, y: np.ndarray):
+        self.x0, self.dx, self.y = x0, dx, np.asarray(y, float)
+        self.n = len(y)
+
+    def __call__(self, x):
+        t = (np.asarray(x, float) - self.x0) / self.dx
+        i = np.clip(np.floor(t).astype(int), 0, self.n - 2)
+        w = t - i
+        return self.y[i] * (1.0 - w) + self.y[i + 1] * w
+
+
+class FieldInterpolator:
+    """Fast vectorised evaluation of the 3D fields of a :class:`Solution`.
+
+    ``fast=True`` uses piecewise-linear interpolation (error ~ dxi^2, ~1e-6 relative at the
+    default spacing): meant for streamline tracing and 3D sampling, not for the PDE checks.
+    """
+
+    def __init__(self, sol: Solution, dxi: float = 0.004, margin: float = 0.0, fast: bool = False):
         self.sol = sol
         lo, hi = sol.xi_lo + margin, sol.xi_hi - margin
         if sol.blowup_north:
@@ -38,7 +56,11 @@ class FieldInterpolator:
         xi = np.linspace(lo, hi, n)
         pr = sol.profiles(xi)
         self.xi_lo, self.xi_hi = float(lo), float(hi)
-        self._sp = {k: CubicSpline(xi, pr[k]) for k in _SPLINE_KEYS}
+        if fast:
+            step = xi[1] - xi[0]
+            self._sp = {k: _Linear(lo, step, pr[k]) for k in _SPLINE_KEYS}
+        else:
+            self._sp = {k: CubicSpline(xi, pr[k]) for k in _SPLINE_KEYS}
 
     # ----------------------------------------------------------------- geometry
     @staticmethod

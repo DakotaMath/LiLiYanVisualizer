@@ -11,8 +11,8 @@ def main() -> int:
     from .ui.main_window import MainWindow
     app = QApplication(sys.argv)
     app.setApplicationName("Swirl Explorer")
-    from PySide6.QtGui import QFont
-    app.setFont(QFont("Segoe UI", 9))
+    from .ui.theme import apply_theme
+    apply_theme(app)
     win = MainWindow()
     win.resize(1680, 980)
     win.show()

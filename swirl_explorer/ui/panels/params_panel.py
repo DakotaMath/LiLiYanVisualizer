@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QWidget, QGridLayout, QLabel, QSlider, QDoubleSpi
 
 from ...core.params import Params, PARAM_NAMES
 from ...core.edges import gamma_minus
+from ...viz import style
 
 LABELS = {
     "c1": ("c₁", "Taylor constant of Q: P_c = c₁(1−x) + c₂(1+x) + c₃(1−x²)"),
@@ -42,7 +43,7 @@ class ParamRow:
         lo, hi = DEFAULT_RANGES[name]
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setRange(0, SLIDER_STEPS)
-        self.slider.setMinimumWidth(120)
+        self.slider.setMinimumWidth(100)
         self.spin = self._spin(-1e6, 1e6, 6)
         self.spin.setToolTip(tip)
         self.lo = self._spin(-1e6, 1e6, 3, lo)
@@ -56,7 +57,7 @@ class ParamRow:
 
         self.ranges = (self.lo, self.hi)
         self.range_lab = QLabel()
-        self.range_lab.setStyleSheet("color:#7a7974;font-size:10px;")
+        self.range_lab.setStyleSheet(f"color:{style.c()['faint']};font-size:10px;")
         self._update_range_label()
         self.lo.valueChanged.connect(lambda _: self._update_range_label())
         self.hi.valueChanged.connect(lambda _: self._update_range_label())
@@ -83,7 +84,8 @@ class ParamRow:
         return s
 
     def _update_range_label(self):
-        self.range_lab.setText(f"slider {self.lo.value():g} … {self.hi.value():g}".replace("-", "−"))
+        self.range_lab.setText(f"{self.lo.value():g} … {self.hi.value():g}".replace("-", "−"))
+        self.range_lab.setToolTip("slider range (tick 'edit slider ranges' to change it)")
 
     def value(self) -> float:
         return self.spin.value()
@@ -140,7 +142,7 @@ class ParamsPanel(QWidget):
         for col, t in enumerate(("", "", "value", "slider min", "max")):
             if t:
                 h = QLabel(t)
-                h.setStyleSheet("color:#52514e;font-size:11px;")
+                h.setStyleSheet(f"color:{style.c()['muted']};font-size:11px;")
                 grid.addWidget(h, 0, col)
                 if col >= 3:
                     self._range_heads.append(h)
@@ -155,9 +157,7 @@ class ParamsPanel(QWidget):
         self.show_ranges = QCheckBox("edit slider ranges")
         self.show_ranges.setToolTip("show the min/max of each slider")
         self.show_ranges.toggled.connect(self._toggle_ranges)
-        bp_note = QLabel("= cos θ of the data point (0 = equator)")
-        bp_note.setStyleSheet("color:#7a7974;font-size:10px;")
-        grid.addWidget(bp_note, len(PARAM_NAMES) + 1, 3, 1, 3)
+
         grid.addWidget(self.show_ranges, len(PARAM_NAMES) + 2, 2, 1, 3)
         self._toggle_ranges(False)
         v.addWidget(box)
@@ -179,7 +179,7 @@ class ParamsPanel(QWidget):
             pg.addWidget(b, i // 3, i % 3)
         v.addWidget(pres)
         note = QLabel(
-            "<span style='color:#46453f'><b>Notation.</b> x = cos θ; the poles x = ±1 are the symmetry axis, "
+            "<span><b>Notation.</b> x = cos θ; the poles x = ±1 are the symmetry axis, "
             "d = sin θ is the distance to it. c<sub>1</sub>, c<sub>2</sub>, c<sub>3</sub>: Taylor constants of "
             "the potential Q at the base point, Q ≈ c<sub>1</sub>(1−x) + c<sub>2</sub>(1+x) + c<sub>3</sub>(1−x<sup>2</sup>). "
             "γ = U, A = f, κ = f<sub>x</sub> at the base point, where U = u<sub>θ</sub> sin θ and "
@@ -197,6 +197,12 @@ class ParamsPanel(QWidget):
             h.setVisible(on)
         for r in self.rows.values():
             r.range_lab.setVisible(not on)
+
+    def refresh_style(self):
+        for r in self.rows.values():
+            r.range_lab.setStyleSheet(f"color:{style.c()['faint']};font-size:10px;")
+        for h in self._range_heads:
+            h.setStyleSheet(f"color:{style.c()['muted']};font-size:11px;")
 
     # ---------------------------------------------------------------- state
     def params(self) -> Params:
