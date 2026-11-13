@@ -44,7 +44,7 @@ def build() -> Path:
     v = h.hexdigest()[:10]
     for name, pairs in {
         "index.html": [('href="style.css"', f'href="style.css?v={v}"'), ('src="app.js"', f'src="app.js?v={v}"')],
-        "app.js": [('from "./view3d.js"', f'from "./view3d.js?v={v}"'), ('from "./path.js"', f'from "./path.js?v={v}"'),
+        "app.js": [('from "./view3d.js"', f'from "./view3d.js?v={v}"'), ('from "./path.js"', f'from "./path.js?v={v}"'), ('from "./picker.js"', f'from "./picker.js?v={v}"'),
                    ("py-worker.js?role=${role}", f"py-worker.js?v={v}&role=${{role}}"),
                    ('new Worker("sigma-worker.js"', f'new Worker("sigma-worker.js?v={v}"')],
         "sigma-worker.js": [('from "./sigma-kernel.js"', f'from "./sigma-kernel.js?v={v}"')],
@@ -66,7 +66,8 @@ if __name__ == "__main__":
     if "--serve" in sys.argv:
         import functools
         import http.server
-        port = 8000
+        import os
+        port = int(os.environ.get("PORT", 8000))
         handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(out))
         print(f"serving on http://localhost:{port}")
         http.server.ThreadingHTTPServer(("127.0.0.1", port), handler).serve_forever()

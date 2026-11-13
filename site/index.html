@@ -33,21 +33,43 @@
     <section id="intro" class="group intro" hidden>
       <h3>Getting started <button id="intro-close" class="x" title="hide this card (Help brings it back)">×</button></h3>
       <ul>
-        <li>Move a <b>slider</b> or type a value: the solution, the 3D view and the profiles follow. <b>Presets</b> jump to the book's examples.</li>
-        <li>With <b>lock to global solutions</b> on, edits stop at the edge of the global set.</li>
+        <li>Pick <b>(c₁, c₂)</b> on the plane, drag the <b>c₃</b> tape and the <b>A</b> bar, and click the green <b>(γ, κ)</b> region: the solution, the 3D view and the profiles follow. <b>Presets</b> jump to the book's examples.</li>
+        <li>With <b>lock to global solutions</b> on, c stays in the Li–Li–Yan set J and (γ, κ) in the global region.</li>
         <li>The <b>Σ-map</b> tab shows which data are global; click it to jump there, drag a box to zoom in, shift-click to add a path keyframe.</li>
         <li><b>Show 2D slice</b> cuts the flow with a plane; <b>Path &amp; movie</b> animates the data along keyframes.</li>
         <li>Everything runs in your browser; <b>Save session</b> files open in the desktop app too.</li>
       </ul>
     </section>
-    <section class="group">
-      <h3>Data at the base point</h3>
-      <div id="param-grid" class="param-grid"></div>
-      <div class="row wrap">
-        <label class="chk" title="a slider or typed value that would leave the global set stops at its edge (the last global value in that direction)"><input id="lock" type="checkbox" checked> lock to global solutions</label>
-        <label class="chk" title="show the min/max of each slider"><input id="show-ranges" type="checkbox"> edit slider ranges</label>
+    <section class="group picker" id="picker">
+      <h3 class="pk-title">Data at the base point <label class="chk pk-lock" title="c stays in J and (γ, κ) in the global region: an edit that would leave them stops at the edge, and when c, A or x₀ change, a (γ, κ) that is no longer global moves to the nearest edge point"><input id="lock" type="checkbox" checked> lock to global solutions</label></h3>
+      <div class="pk-nums pk-xb"><label title="base point x₀ = cos θ₀ where the data are given (default: the equator x₀ = 0); changing it changes the global set">base point x₀ <input id="p-xb" type="number" step="0.001" min="-0.99" max="0.99"></label></div>
+      <div class="pk-head pk-hrow" title="Taylor constants of Q at the base point: Q ≈ c₁(1−x) + c₂(1+x) + c₃(1−x²)">Taylor constants of Q ≈ c₁(1−x) + c₂(1+x) + c₃(1−x²) <span class="pk-cur" id="pk-cur-c"></span></div>
+      <div class="pk-crow">
+        <div class="pk-cwrap"><div id="pk-toast-c" class="pk-toast"></div><canvas id="pk-c" class="pk-plane" title="the (c₁, c₂) plane at the current c₃. Hatched: outside the Li–Li–Yan set J (c₃ &lt; c̄₃(c₁, c₂), or some cᵢ &lt; −1). Click to pick (c₁, c₂), drag the marker, drag elsewhere to pan, wheel to zoom, double-click to fit."></canvas></div>
+        <div class="pk-tapecol">
+          <span class="pk-tlab">c₃</span>
+          <canvas id="pk-c3" class="pk-tape" title="c₃: drag up or down as far as you like (shift: finer), or use the wheel. Not clamped: below the red mark c̄₃(c₁, c₂), (c₁, c₂) is pushed along the edge of J."></canvas>
+          <span class="pk-tcap" title="c₃ has no limit; below c̄₃ the lock moves (c₁, c₂)">drag ↕</span>
+        </div>
       </div>
-      <div id="lock-note" class="note" hidden></div>
+      <div class="pk-nums"><label>c₁ <input id="p-c1" type="number" step="any"></label><label>c₂ <input id="p-c2" type="number" step="any"></label><label>c₃ <input id="p-c3" type="number" step="any"></label></div>
+      <div class="pk-key"><span class="ln red"></span> edge of J at this c₃ <span class="hatch"></span> outside J</div>
+      <div class="pk-key" title="c̄₃(c₁, c₂) = −½S(S+2), S = √(1+c₁) + √(1+c₂): the lowest c₃ that keeps this (c₁, c₂) in J. Lowering c₃ below it slides (c₁, c₂) along the edge of J."><span class="tick"></span> c̄₃ = <span id="pk-cbar"></span>: lowest c₃ for which this (c₁, c₂) stays in J</div>
+
+      <div class="pk-head" title="A = f(x₀): the swirl at the base point">Swirl A = f(x₀) <span class="pk-sub">· press and drag sideways; stops at ±6</span></div>
+      <div class="pk-arow">
+        <canvas id="pk-A" class="pk-scrub" title="A: press and drag left or right as far as you like (shift: finer); it stops at ±6. Double-click: A = 0."></canvas>
+        <input id="p-A" type="number" step="any" title="A = f(x₀)">
+      </div>
+
+      <div class="pk-head pk-hrow" title="γ = U(x₀) (meridional circulation) and κ = fₓ(x₀) (swirl rate) at the base point">Circulation γ = U(x₀), swirl rate κ = fₓ(x₀) <span class="pk-cur" id="pk-cur-gk"></span></div>
+      <div class="pk-mapwrap">
+        <canvas id="pk-gk" class="pk-plane" title="the global (γ, κ) for the current c, A, x₀ (green). Click to pick (γ, κ), drag the marker, drag elsewhere to pan, wheel to zoom, double-click to fit the whole region."></canvas>
+        <div id="pk-busy" class="pk-busy" hidden>computing…</div><div id="pk-toast-gk" class="pk-toast"></div>
+      </div>
+      <div class="pk-key"><span class="sw green"></span> <span title="computed on an 81 × 81 grid, with the edge located by bisection; a pick is checked exactly">global for these c, A, x₀</span> <span class="sw plain"></span> not global (blow-up, or a pole fails the terminal test)</div>
+      <div class="pk-hint">both planes: <span>click/drag <span class="mk"></span> picks</span> · <span>drag pans</span> · <span>wheel zooms</span> · <span>dbl-click fits</span></div>
+      <div class="pk-nums"><label>γ <input id="p-gamma" type="number" step="any"></label><label>κ <input id="p-kappa" type="number" step="any"></label></div>
     </section>
     <details id="presets-box" class="group" open>
       <summary><h3>Presets</h3></summary>
