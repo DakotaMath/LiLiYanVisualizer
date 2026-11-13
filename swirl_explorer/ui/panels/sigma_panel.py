@@ -172,6 +172,7 @@ class SigmaMapPanel(QWidget):
         self.mode = QComboBox()
         for k, t in MODES.items():
             self.mode.addItem(t, k)
+        self.mode.setCurrentIndex(list(MODES).index("mu"))      # open on the pole exponents
         self.mode.currentIndexChanged.connect(lambda _: self.redraw())
         gv.addWidget(self.mode)
         self.chk_edge = QCheckBox("edge of the global region")
