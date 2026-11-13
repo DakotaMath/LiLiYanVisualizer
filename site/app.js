@@ -48,7 +48,7 @@ const S = {
   plane: { azimuth: -90, elevation: 0, offset: 0, half_size: 1.0 },
   sliceOpts: { un: true, rho: false, log: false, lines: true, lic: false, density: 1.4, follow: false },
   plots: { xvar: "xi", mode: "linear", pole: "north", quantities: ["U", "f", "Q"], overlay: true },
-  sigma: { x_name: "gamma", y_name: "kappa", x_range: [-2.6, 2.6], y_range: [-4.6, 4.6], n: 101, mode: "global",
+  sigma: { x_name: "gamma", y_name: "kappa", x_range: [-2.6, 2.6], y_range: [-4.6, 4.6], n: 101, mode: "mu",
            edge: true, mu: false, computed: null, running: false, axes: [] },
   tab: "view3d", rtab: "ctl3d", solved: null,
 };
