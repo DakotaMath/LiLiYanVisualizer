@@ -563,7 +563,7 @@ function showSlice(on) {
 function showPath(on) {
   $("bottom").hidden = !on;
   $("notation").open = !on;
-  $("presets-box").open = !on;                     // the status stays visible above the path panel
+  $("presets-box").open = !on;                     // the status (below the presets) moves up into view
   $("btn-path").classList.toggle("on", on);
   view.resize();
 }
@@ -842,7 +842,7 @@ async function main() {
   let introOff = false;
   try { introOff = localStorage.getItem("swirl.intro") === "off"; } catch (e) { /* storage blocked */ }
   $("intro").hidden = introOff;
-  if (!introOff) $("notation").open = false;         // keep the status in view next to the card
+  if (!introOff) $("notation").open = false;         // a shorter panel next to the card
   $("intro-close").addEventListener("click", () => { $("intro").hidden = true; try { localStorage.setItem("swirl.intro", "off"); } catch (e) {} });
   $("btn-intro").addEventListener("click", () => { $("intro").hidden = false; $("left").scrollTop = 0; });
   // the path panel's height can be dragged, like the desktop's dock splitter
