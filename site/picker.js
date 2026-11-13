@@ -1,6 +1,6 @@
 // The data picker in the left panel. Four controls set the six data at the base point:
 //   the (c₁, c₂) plane, with the c₃ tape beside it    the slice {c₃ fixed} of the Li–Li–Yan set J
-//   the A scrub bar                                    drag left/right as far as you like; clamped
+//   the A tape                                         drag left/right as far as you like; no limit
 //   the (γ, κ) map                                     the global region for the current c, A, x₀
 // Both planes: click to pick a point, drag the marker to move it, drag elsewhere to pan, the wheel
 // zooms, double-click fits the view again. With 'lock to global solutions' on, c stays in J and
@@ -8,7 +8,6 @@
 // change, a (γ, κ) that is no longer global moves to the nearest edge point.
 
 const GREEN = "#3fa877", MAGENTA = "#ff4fd8";
-export const A_MAX = 6;
 const GK_DEFAULT = { x0: -3, x1: 3, y0: -5, y1: 5 };      // γ × κ: the parameters' default ranges
 const C_DEFAULT = { x0: -1.6, x1: 3, y0: -1.6, y1: 3 };
 const GRID = 81;
@@ -251,7 +250,6 @@ export class DataPicker {
     this.gen = 0;
     this.grid = null; this.gkAuto = null; this.gkUser = false; this.gkBusy = false;
     this.cUser = false;
-    this.flash = { A: 0 };
 
     // ---- the (c₁, c₂) plane
     this.cPlane = new Plane($("pk-c"), {
@@ -279,6 +277,11 @@ export class DataPicker {
     scrubber(this.abar, { axis: "x", onDelta: (m) => this.editData({ A: this.p.A + m / TAPE_PPU }, "drag"),
                           onEnd: () => this.editData({}, "end") });
     this.abar.addEventListener("dblclick", () => this.editData({ A: 0 }, "end"));
+    this.abar.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const st = e.shiftKey ? 0.01 : 0.1;
+      this.editData({ A: +(this.p.A - Math.sign(e.deltaY) * st).toFixed(10) }, "end");
+    }, { passive: false });
     new ResizeObserver(() => this.drawA()).observe(this.abar);
     // ---- the (γ, κ) map
     this.gkPlane = new Plane($("pk-gk"), {
@@ -343,11 +346,6 @@ export class DataPicker {
   // (γ, κ) that has left the global region moves to its edge. Only then is the solution solved.
   async editData(ch, phase) {
     let p = { ...this.p, ...ch };
-    if ("A" in ch) {
-      const A = clamp(p.A, -A_MAX, A_MAX);
-      if (A !== p.A) this.flash.A = performance.now();
-      p.A = A;
-    }
     const lock = this.o.isLocked();
     if (lock && !inJlock(p.c1, p.c2, p.c3)) {
       [p.c1, p.c2] = projectC(p.c1, p.c2, p.c3);
@@ -750,45 +748,26 @@ export class DataPicker {
     ctx.strokeStyle = css("--border"); ctx.lineWidth = 1; ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
   }
 
-  drawA() {                                // a tape under a fixed needle, hatched beyond ±A_MAX
+  drawA() {                                // a tape under a fixed needle, like c₃: no limit
     const cv = this.abar, [ctx, W, H] = hidpi(cv);
     if (!W) return;
-    const dark = document.documentElement.dataset.theme !== "light";
     const A = this.p.A, X = (v) => W / 2 + (v - A) * TAPE_PPU;
     ctx.fillStyle = css("--base"); ctx.fillRect(0, 0, W, H);
-    const hit = performance.now() - this.flash.A < 600;
-    for (const s of [-1, 1]) {                  // beyond the limits
-      const xe = X(s * A_MAX), x0 = s < 0 ? 0 : Math.min(W, xe), x1 = s < 0 ? Math.max(0, xe) : W;
-      if (x1 <= x0) continue;
-      ctx.fillStyle = dark ? "#2a2326" : "#efe4e2"; ctx.fillRect(x0, 0, x1 - x0, H);
-      ctx.save(); ctx.beginPath(); ctx.rect(x0, 0, x1 - x0, H); ctx.clip();
-      ctx.strokeStyle = dark ? "rgba(255,107,107,0.36)" : "rgba(192,57,43,0.42)"; ctx.lineWidth = 1; ctx.beginPath();
-      for (let k = -H; k < W + H; k += 7) { ctx.moveTo(k, H); ctx.lineTo(k + H, 0); }
-      ctx.stroke(); ctx.restore();
-      ctx.strokeStyle = hit ? css("--bad") : css("--bad"); ctx.lineWidth = hit ? 3 : 2;
-      ctx.beginPath(); ctx.moveTo(xe, 0); ctx.lineTo(xe, H); ctx.stroke();
-    }
     ctx.strokeStyle = css("--muted"); ctx.fillStyle = css("--muted"); ctx.lineWidth = 1;
     ctx.font = "10px 'Segoe UI', system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
     ctx.beginPath();
     const lo = A - W / 2 / TAPE_PPU, hi = A + W / 2 / TAPE_PPU;
     for (let v = Math.ceil(lo * 4) / 4; v <= hi; v += 0.25) {
-      if (Math.abs(v) > A_MAX + 1e-9) continue;
       const x = Math.round(X(v)) + 0.5, major = Math.abs(v - Math.round(v)) < 1e-9;
       ctx.moveTo(x, H - (major ? 9 : 5)); ctx.lineTo(x, H);
       if (major && x > 8 && x < W - 8 && Math.abs(x - W / 2) > 26) ctx.fillText(String(Math.round(v)).replace("-", "−"), x, 15);
     }
     ctx.stroke();
-    ctx.fillStyle = css("--muted"); ctx.textBaseline = "top";      // a limit off the tape: an arrow
-    if (X(-A_MAX) < 0) { ctx.textAlign = "left"; ctx.fillText(`◂ limit −${A_MAX}`, 3, 2); }
-    if (X(A_MAX) > W) { ctx.textAlign = "right"; ctx.fillText(`limit ${A_MAX} ▸`, W - 3, 2); }
-    ctx.textAlign = "center";
     // the needle with the value
-    ctx.fillStyle = hit ? css("--bad") : MAGENTA; ctx.fillRect(W / 2 - 20, 1, 40, 13);
+    ctx.fillStyle = MAGENTA; ctx.fillRect(W / 2 - 22, 1, 44, 13);
     ctx.fillRect(W / 2 - 1, 1, 2, H - 2);
     ctx.fillStyle = "#2b0a28"; ctx.font = "600 11px 'Segoe UI', system-ui, sans-serif"; ctx.textBaseline = "middle";
     ctx.fillText(fmt(A, 4), W / 2, 8);
     ctx.strokeStyle = css("--border"); ctx.lineWidth = 1; ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
-    if (hit) setTimeout(() => this.drawA(), 650);
   }
 }
