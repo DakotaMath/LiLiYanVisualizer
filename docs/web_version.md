@@ -54,7 +54,8 @@ The six data are chosen on two planes and two tapes instead of sliders:
   nearest point of the slice, a little inside it (cᵢ ≥ −0.99, c₃ − c̄₃ ≥ 0.05): on the edge of J
   itself the global (γ, κ) set at A = 0 is only a segment of κ = 0, with nothing around it to pick.
   With swirl a few global data have c just outside J; untick the lock to reach them.
-- **A tape.** Drag sideways; it stops at ±6.
+- **A tape.** Drag sideways (or the wheel); no limit. For c in J every A has global solutions (the
+  face κ = 0, U₋ ≤ γ ≤ U₊, does not depend on A); the (γ, κ) region shrinks as |A| grows.
 - **(γ, κ) map.** The global region for the current c, A, x₀, on an 81 × 81 grid computed by
   the Σ-map workers, its edge located by bisection, fitted to the whole region. A pick outside
   the region stops at its edge (bisection with the solver's own test, `isGlobal` in
