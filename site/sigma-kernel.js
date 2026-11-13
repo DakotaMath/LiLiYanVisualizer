@@ -319,3 +319,63 @@ export function sigmaRows(spec, rows) {
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------- the data picker's lock
+// The same test as core.solver.is_global_fast: xi_max = 18, rtol 1e-10, atol 1e-12, blow-up at
+// |h| > 1e5 and the terminal test with tolerance 1e-9 at both ends.  (The map rows above use the
+// Σ-map's looser settings; the lock must agree with the solve, so it uses the solver's.)
+function terminalSafe(h, Q, side, tol) {
+  const D = 1.0 + 0.5 * Q;
+  if (!(D >= -tol)) return false;
+  return (side > 0 ? h : -h) > -Math.sqrt(Math.max(D, 0.0)) - tol;
+}
+
+/** Is the solution with data p = {c1, c2, c3, gamma, A, kappa, xb} global (is_global_fast)? */
+export function isGlobal(p) {
+  const xb = p.xb ?? 0.0;
+  const lam = p.A ** 2 - 2 * p.c1 - 2 * p.c2 - 4 * p.c3;
+  const kap = (1.0 - xb ** 2) * p.kappa;
+  const Q0 = p.c1 * (1 - xb) + p.c2 * (1 + xb) + p.c3 * (1 - xb * xb);
+  const Qx0 = -p.c1 + p.c2 - 2 * p.c3 * xb;
+  const y0 = [0.5 * p.gamma + xb, 0.0, p.A, Q0, (1 - xb ** 2) * Qx0];
+  const xi0 = Math.atanh(xb);
+  for (const side of [1, -1]) {
+    const r = shootLane(y0, xi0, side * 18.0, lam, kap, 1e-10, 1e-12, 1.0e5);
+    if (r.blow || !r.y.every(Number.isFinite) || !terminalSafe(r.y[0], r.y[3], side, 1e-9)) return false;
+  }
+  return true;
+}
+
+/** (γ, κ) under the lock.  req = {p, target: [γ, κ], seeds: [[γ, κ], ...]} (seeds: global grid
+ *  points, nearest first).  Returns {gk, moved}: the target when it is global, otherwise the edge
+ *  of the global set on the segment from the first seed that is global to the target (bisection,
+ *  ends on the global side, to 1e-9; to 1e-6 with req.quick); gk = null when no seed is global. */
+export function gkClamp(req) {
+  const at = (g, k) => ({ ...req.p, gamma: g, kappa: k });
+  const [tg, tk] = req.target;
+  if (isGlobal(at(tg, tk))) return { gk: [tg, tk], moved: false };
+  for (const [sg, sk] of req.seeds || []) {
+    if (!isGlobal(at(sg, sk))) continue;
+    let a = 0, b = 1;                          // fractions of the way from the seed to the target
+    const tol = (req.quick ? 1e-6 : 1e-9) / Math.max(1e-12, Math.hypot(tg - sg, tk - sk));   // quick: while dragging
+    while (b - a > tol) {
+      const m = 0.5 * (a + b);
+      if (isGlobal(at(sg + m * (tg - sg), sk + m * (tk - sk)))) a = m; else b = m;
+    }
+    return { gk: [sg + a * (tg - sg), sk + a * (tk - sk)], moved: true };
+  }
+  return { gk: null, moved: true };
+}
+
+/** The data picker's map edge: for each grid edge [γa, κa, γb, κb] whose end a is global (map rule:
+ *  both poles of type ≥ G) and b is not, the fraction of the way from a to b where that changes,
+ *  by bisection in `steps` steps.  req = {p, xi_max, rtol, steps, edges}. */
+export function refineEdges(req) {
+  const p = { ...req.p }, xiMax = req.xi_max ?? 14.0, rtol = req.rtol ?? 1e-9, xb = p.xb ?? 0.0, steps = req.steps ?? 6;
+  const ok = (g, k) => { p.gamma = g; p.kappa = k; const [N, S] = poles(p, xb, xiMax, rtol); return N[0] >= G && S[0] >= G; };
+  return req.edges.map(([ga, ka, gb, kb]) => {
+    let a = 0, b = 1;
+    for (let s = 0; s < steps; s++) { const m = 0.5 * (a + b); if (ok(ga + m * (gb - ga), ka + m * (kb - ka))) a = m; else b = m; }
+    return 0.5 * (a + b);
+  });
+}

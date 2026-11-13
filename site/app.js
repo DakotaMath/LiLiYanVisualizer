@@ -2,6 +2,7 @@
 // (swirl_explorer.web.api in a Pyodide worker); this file is the UI around them.
 import { View3D, OBLIQUE, POLE } from "./view3d.js";
 import { PathDock } from "./path.js";
+import { DataPicker } from "./picker.js";
 
 const $ = (id) => document.getElementById(id);
 const NAMES = ["c1", "c2", "c3", "gamma", "A", "kappa"];
@@ -38,7 +39,7 @@ class PyWorker {
 
 // ============================================================================ state
 const S = {
-  info: null, params: null, lock: true, ranges: {}, theme: "dark",
+  info: null, params: null, lock: true, theme: "dark",
   scene: { seed_mode: "rings", n_seeds: 40, sphere_center: [0.35, 0.25, 0.45], sphere_radius: 0.18,
            line_p0: [-0.7, 0.35, 0.35], line_p1: [0.7, 0.35, 0.35], color_by: "speed",
            show_streamlines: true, show_surface: false, show_vortex: false, show_glyphs: false, show_iso: false,
@@ -53,7 +54,7 @@ const S = {
   tab: "view3d", rtab: "ctl3d", solved: null,
 };
 
-let py = null, view = null, path = null, syncPlots = () => {}, syncSigma = () => {};
+let py = null, view = null, path = null, picker = null, syncPlots = () => {}, syncSigma = () => {};
 const status = (t) => { $("sb-info").textContent = t; };
 
 // ============================================================================ scheduling
@@ -84,83 +85,11 @@ async function pump() {
 }
 
 // ============================================================================ parameters
-function buildParams() {
-  const grid = $("param-grid");
-  grid.innerHTML = "";
-  for (const p of S.info.params) {
-    S.ranges[p.name] = [...p.range];
-    const lab = document.createElement("span"); lab.className = "lab"; lab.textContent = p.label; lab.title = p.tip;
-    const sl = document.createElement("input"); sl.type = "range"; sl.min = 0; sl.max = 2000; sl.step = 1; sl.id = `p-${p.name}-s`; sl.title = p.tip;
-    const num = document.createElement("input"); num.type = "number"; num.step = "any"; num.id = `p-${p.name}`; num.title = p.tip;
-    const rng = document.createElement("span"); rng.className = "rng"; rng.id = `p-${p.name}-r`;
-    grid.append(lab, sl, num, rng);
-    sl.addEventListener("input", () => {
-      const [a, b] = S.ranges[p.name];
-      edit(p.name, a + (b - a) * (sl.value / 2000));
-    });
-    num.addEventListener("change", () => { const v = parseFloat(num.value); if (isFinite(v)) edit(p.name, v); });
-  }
-  const lab = document.createElement("span"); lab.className = "lab"; lab.textContent = "base point x₀";
-  const xb = document.createElement("input"); xb.type = "number"; xb.id = "p-xb"; xb.step = "0.001"; xb.min = -0.99; xb.max = 0.99;
-  xb.title = "base point x_b = cos θ_b of the Cauchy data (default: equator)";
-  xb.addEventListener("change", () => setParams({ ...S.params, xb: Math.max(-0.99, Math.min(0.99, parseFloat(xb.value) || 0)) }));
-  grid.append(lab, document.createElement("span"), xb, document.createElement("span"));
-  renderRanges();
-}
-
-function renderRanges() {
-  const edit = $("show-ranges").checked;
-  for (const n of NAMES) {
-    const r = $(`p-${n}-r`), [a, b] = S.ranges[n];
-    if (edit) {
-      r.innerHTML = `<input type="number" step="any" value="${a}" data-i="0"> <input type="number" step="any" value="${b}" data-i="1">`;
-      r.querySelectorAll("input").forEach((inp) => inp.addEventListener("change", () => {
-        const v = parseFloat(inp.value); if (!isFinite(v)) return;
-        S.ranges[n][+inp.dataset.i] = v;
-        if (S.ranges[n][0] >= S.ranges[n][1]) S.ranges[n][1] = S.ranges[n][0] + 1;
-        syncWidgets();
-      }));
-    } else {
-      r.textContent = `${+a.toPrecision(6)} … ${+b.toPrecision(6)}`.replace(/-/g, "−");
-      r.title = "slider range (tick 'edit slider ranges' to change it)";
-    }
-  }
-}
-
-function syncWidgets() {
-  let widened = false;
-  for (const n of NAMES) {
-    const v = S.params[n];
-    if (v < S.ranges[n][0]) { S.ranges[n][0] = v; widened = true; }
-    if (v > S.ranges[n][1]) { S.ranges[n][1] = v; widened = true; }
-  }
-  if (widened) renderRanges();
-  for (const n of NAMES) {
-    const v = S.params[n], [a, b] = S.ranges[n];
-    $(`p-${n}`).value = Number(v.toPrecision(7));
-    $(`p-${n}-s`).value = Math.round(2000 * Math.min(1, Math.max(0, (v - a) / (b - a))));
-  }
-  $("p-xb").value = S.params.xb;
-}
-
-// a user edit of one datum: through the global lock, then solve
-let lockGen = 0;
-async function edit(name, value) {
-  const old = S.params[name];
-  $("lock-note").hidden = true;
-  if (S.lock && value !== old) {
-    const g = ++lockGen;
-    const r = await schedule(`lock:${name}`, "lock", [S.params, name, old, value]);
-    if (r === null || g !== lockGen) return;            // superseded by a later edit
-    if (r.note) { $("lock-note").textContent = r.note; $("lock-note").hidden = false; }
-    value = r.value;
-  }
-  setParams({ ...S.params, [name]: value });
-}
-
+// The left panel's data picker (picker.js) does the editing and the lock; it hands finished data
+// to setParams.
 function setParams(p) {             // presets, the Σ-map and the path set values directly (no lock)
   S.params = { ...S.params, ...p };
-  syncWidgets();
+  picker.sync(S.params);
   requestSolve();
   sigmaFollowParams();
 }
@@ -839,6 +768,7 @@ function setTheme(t) {
   document.documentElement.dataset.theme = t;
   $("btn-theme").textContent = t === "dark" ? "Light theme" : "Dark theme";
   if (!py) return;
+  if (picker) picker.render();
   py.call("set_theme", t).then(() => { view.setTheme(t); requestSolve(); if (path) { path.drawTimeline(); path.updateEvents(); } });
 }
 
@@ -861,7 +791,9 @@ async function main() {
   $("load-bar").style.width = "100%";
   for (const c of S.info.iso_fields) { const o = document.createElement("option"); o.value = c.key; o.textContent = c.label; $("s-iso_field").appendChild(o); }
   for (const c of S.info.color_by) { const o = document.createElement("option"); o.value = c.key; o.textContent = c.label; $("s-color_by").appendChild(o); }
-  buildParams();
+  S.params = S.info.start;
+  picker = new DataPicker({ $, getParams: () => S.params, commit: setParams, isLocked: () => S.lock,
+    getPool: () => { startPool(); return pool; }, clampWorker: new PyWorker("sigma") });
   const pres = $("presets");
   for (const p of S.info.presets) {
     const b = document.createElement("button"); b.textContent = p.label; b.title = p.tip;
@@ -903,8 +835,7 @@ async function main() {
   document.querySelectorAll(".rtab").forEach((b) => b.addEventListener("click", () => setRTab(b.dataset.rtab)));
   $("btn-slice").addEventListener("click", () => showSlice(!S.sliceShown));
   $("btn-path").addEventListener("click", () => showPath($("bottom").hidden));
-  $("lock").addEventListener("change", () => { S.lock = $("lock").checked; });
-  $("show-ranges").addEventListener("change", renderRanges);
+  $("lock").addEventListener("change", () => { S.lock = $("lock").checked; if (S.lock) picker.editData({}, "end"); });
   $("btn-theme").addEventListener("click", () => setTheme(S.theme === "dark" ? "light" : "dark"));
   $("btn-help").addEventListener("click", () => $("help").showModal());
   // the getting-started card: shown until dismissed (remembered in this browser)
@@ -938,11 +869,10 @@ async function main() {
     if (k === "s") { ev.preventDefault(); $("btn-save").click(); }
   });
   window.addEventListener("resize", () => { clearTimeout(window._rz); window._rz = setTimeout(() => refreshViews(), 300); });
-  S.params = S.info.start;
-  syncWidgets();
   setRTab(S.rtab);                                  // 3D controls raised, as the desktop
   $("loading").classList.add("done");
   view.resize();
+  picker.render(); picker.refreshMap(false);
   await requestSolve();
   status(`ready in ${((performance.now() - t0) / 1000).toFixed(1)} s · Swirl Explorer ${S.info.version} running in your browser (Pyodide)`);
 }
